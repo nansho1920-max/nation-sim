@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply min-h-screen bg-slate-950 text-slate-200 antialiased;
+  }
+  body {
+    background-image:
+      radial-gradient(ellipse at top, rgba(120, 53, 15, 0.12), transparent 60%),
+      radial-gradient(ellipse at bottom right, rgba(30, 58, 138, 0.12), transparent 60%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-slate-800 bg-slate-900/70 shadow-xl shadow-black/30 backdrop-blur;
+  }
+  .panel-title {
+    @apply flex items-center gap-2 font-serif text-sm font-bold tracking-widest text-amber-200/90;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-40;
+  }
+}
+
+.scrollbar-thin::-webkit-scrollbar { width: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
