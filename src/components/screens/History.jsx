@@ -26,6 +26,9 @@ const STYLE = {
 export default function History({ state: s }) {
   const [filter, setFilter] = useState('all');
   const [showReports, setShowReports] = useState(false);
+  // 解党した政党も、選挙で議席を持っていたなら記録に残す
+  const former = (s.politics.formerParties ?? []).filter((fp) => s.politics.elections.some((e) => (e.seats[fp.id] ?? 0) > 0));
+  const cols = [...s.parties, ...former.map((fp) => ({ ...fp, dissolved: true }))];
   const logs = s.logs.filter((l) => (filter === 'all' || l.category === filter) && (showReports || l.type !== 'report'));
   return (
     <div className="space-y-4">
@@ -36,9 +39,10 @@ export default function History({ state: s }) {
             <thead>
               <tr className="border-b border-line text-[11px] text-ink-faint">
                 <th className="px-3 py-2 text-left font-medium">日付</th>
-                {s.parties.map((p) => (
-                  <th key={p.id} className="px-2 py-2 text-right font-medium" style={{ color: p.color }}>
+                {cols.map((p) => (
+                  <th key={p.id} className="px-2 py-2 text-right font-medium" style={{ color: p.color }} title={p.dissolved ? `${p.name}（解党）` : p.name}>
                     {p.short}
+                    {p.dissolved && <span className="text-ink-faint">†</span>}
                   </th>
                 ))}
                 <th className="px-3 py-2 text-left font-medium">連立</th>
@@ -48,12 +52,12 @@ export default function History({ state: s }) {
               {s.politics.elections.map((e, i) => (
                 <tr key={i} className="border-b border-line/60">
                   <td className="num px-3 py-1.5">{formatYM(e.date)}</td>
-                  {s.parties.map((p) => (
+                  {cols.map((p) => (
                     <td key={p.id} className={`num px-2 py-1.5 text-right ${e.coalition.includes(p.id) ? 'font-bold text-ink' : 'text-ink-dim'}`}>
-                      {e.seats[p.id]}
+                      {e.seats[p.id] ?? '—'}
                     </td>
                   ))}
-                  <td className="px-3 py-1.5 text-[12px]">{e.coalition.map((c) => s.parties.find((p) => p.id === c)?.short ?? c).join('・')}</td>
+                  <td className="px-3 py-1.5 text-[12px]">{e.coalition.map((c) => [...s.parties, ...(s.politics.formerParties ?? [])].find((p) => p.id === c)?.short ?? c).join('・')}</td>
                 </tr>
               ))}
             </tbody>

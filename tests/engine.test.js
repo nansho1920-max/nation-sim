@@ -363,3 +363,43 @@ describe('新しいゲームの設定', () => {
     expect(findNonFinite(s)).toBeNull();
   });
 });
+
+describe('ゲーム途中の解党', () => {
+  it('野党を解党すると、議員と支持者が他党へ移り、議席合計は300のまま', () => {
+    let s = structuredClone(play(newGame(), 100));
+    s.politics.capital = 100;
+    const target = s.parties.find((p) => !s.politics.coalition.includes(p.id)).id;
+    const out = R(s, { type: 'DISSOLVE_PARTY', id: target });
+    expect(out.parties.map((p) => p.id)).not.toContain(target);
+    expect(Object.keys(out.politics.seats)).not.toContain(target);
+    expect(Object.values(out.politics.seats).reduce((a, b) => a + b, 0)).toBe(300);
+    expect(Object.values(out.politics.support).reduce((a, b) => a + b, 0)).toBeCloseTo(100, 6);
+    expect(out.politics.formerParties.at(-1).id).toBe(target);
+    expect(out.politics.capital).toBe(80);
+    const later = play(out, 2500, 1);
+    expect(findNonFinite(later)).toBeNull();
+  });
+  it('連立相手を解党すると連立と内閣から消え、空いた大臣は補充される', () => {
+    const s = structuredClone(newGame());
+    s.politics.capital = 100;
+    const partner = s.politics.coalition.find((p) => p !== s.meta.partyId);
+    const out = R(s, { type: 'DISSOLVE_PARTY', id: partner });
+    expect(out.politics.coalition).not.toContain(partner);
+    expect(Object.values(out.politics.ministers).every((m) => m.party !== partner)).toBe(true);
+    expect(Object.keys(out.politics.ministers).length).toBe(7);
+  });
+  it('自分の党・最低3党・政治資本不足のときは解党できない', () => {
+    const s = structuredClone(newGame());
+    s.politics.capital = 100;
+    expect(R(s, { type: 'DISSOLVE_PARTY', id: s.meta.partyId }).parties.length).toBe(6);
+    let t = s;
+    for (const id of ['green', 'reform', 'socdem']) t = structuredClone(R(t, { type: 'DISSOLVE_PARTY', id }));
+    expect(t.parties.length).toBe(3);
+    t.politics.capital = 100;
+    const other = t.parties.find((p) => p.id !== t.meta.partyId).id;
+    expect(R(t, { type: 'DISSOLVE_PARTY', id: other }).parties.length).toBe(3);
+    const poor = structuredClone(newGame());
+    poor.politics.capital = 10;
+    expect(R(poor, { type: 'DISSOLVE_PARTY', id: 'green' }).parties.length).toBe(6);
+  });
+});

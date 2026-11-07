@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react';
-import { Briefcase, Check, Flag, Gavel, Landmark, Pencil, Scale, SlidersHorizontal, Star, UserPlus, UserMinus, Vote } from 'lucide-react';
+import { Briefcase, Check, Flag, Gavel, Landmark, Pencil, Scale, SlidersHorizontal, Star, Trash2, UserPlus, UserMinus, Vote } from 'lucide-react';
+import ConfirmDialog from '../modals/ConfirmDialog';
 import PolicyDialog from '../modals/PolicyDialog';
 import RenameDialog from '../modals/RenameDialog';
 import FoundPartyModal from '../modals/FoundPartyModal';
@@ -9,7 +10,7 @@ import { ideologyLabel } from '../../game/data/parties';
 import { LAWS, LAW_CATEGORIES } from '../../game/data/laws';
 import { MINISTRIES, competenceToEff } from '../../game/data/cabinet';
 import { MAJORITY, SUPERMAJORITY } from '../../game/data/balance';
-import { canInvite, canProposeLaw, getPromise, lawCost, nextElectionLabel, predictVote } from '../../game/engine/politics';
+import { DISSOLVE_COST, canDissolve, canInvite, canProposeLaw, getPromise, lawCost, nextElectionLabel, predictVote, previewDissolve } from '../../game/engine/politics';
 import { getTech } from '../../game/data/techs';
 import { formatYM } from '../../game/core/calendar';
 
@@ -54,7 +55,7 @@ const Stars = ({ n, label }) => (
   </span>
 );
 
-function ParliamentTab({ s, d, dispatch, onFound, onRename, onPolicy }) {
+function ParliamentTab({ s, d, dispatch, onFound, onRename, onPolicy, onDissolve }) {
   const pol = s.politics;
   const player = s.meta.partyId;
   const hist = s.history.slice(-36);
@@ -143,6 +144,17 @@ function ParliamentTab({ s, d, dispatch, onFound, onRename, onPolicy }) {
                         <SlidersHorizontal className="h-3 w-3" />
                         政策
                       </button>
+                      {!isPlayer && (
+                        <button
+                          onClick={() => onDissolve(p)}
+                          className="btn h-6 gap-1 rounded px-1.5 text-[10px] text-ink-faint hover:bg-raised hover:text-red-300"
+                          aria-label={`${p.name}を解党させる`}
+                          title="解党させる"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          解党
+                        </button>
+                      )}
                       {isPlayer && <Chip tone="brass">与党第一党</Chip>}
                       {inCoalition && !isPlayer && <Chip tone="good">連立</Chip>}
                     </div>
@@ -326,11 +338,51 @@ const TABS = [
   { id: 'cabinet', label: '内閣', icon: Briefcase },
 ];
 
+function DissolveDialog({ s, party, dispatch, onClose }) {
+  const can = canDissolve(s, party.id);
+  const pv = previewDissolve(s, party.id);
+  const moves = Object.entries(pv.transfers)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  return (
+    <ConfirmDialog
+      title={`${party.name}を解党させますか？`}
+      confirmLabel={can.ok ? `解党させる（政治資本${DISSOLVE_COST}）` : '解党できません'}
+      danger
+      onCancel={onClose}
+      onConfirm={() => {
+        if (can.ok) dispatch({ type: 'DISSOLVE_PARTY', id: party.id });
+        onClose();
+      }}
+    >
+      <p>政界工作で{party.name}を解党に追い込む。所属議員と支持者は、政策の近い党へ移っていく。</p>
+      {moves.length > 0 && (
+        <ul className="mt-2 space-y-0.5 rounded-lg bg-night/60 p-2.5 text-[12px]">
+          {moves.map(([pid, n]) => (
+            <li key={pid} className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-sm" style={{ background: partyOf(s, pid).color }} />
+              <span className="flex-1 text-ink">{partyOf(s, pid).name}</span>
+              <span className="num text-ink">+{n}議席</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {pv.wasPartner && (
+        <p className={`mt-2 text-[12px] ${pv.coalitionSeats >= MAJORITY ? 'text-amber-300' : 'text-red-300'}`}>
+          連立与党の一角が消えるため、与党連合は{pv.coalitionSeats}議席になる{pv.coalitionSeats < MAJORITY ? '（過半数割れ）' : ''}。この党の大臣は内閣から外れる。
+        </p>
+      )}
+      {!can.ok && <p className="mt-2 text-[12px] text-red-300">{can.reason}</p>}
+    </ConfirmDialog>
+  );
+}
+
 export default function Politics({ state, derived, dispatch }) {
   const [tab, setTab] = useState('parliament');
   const [founding, setFounding] = useState(false);
   const [renaming, setRenaming] = useState(null);
   const [policy, setPolicy] = useState(null);
+  const [dissolving, setDissolving] = useState(null);
   const enacted = useMemo(() => Object.keys(state.politics.laws).length, [state.politics.laws]);
   return (
     <div className="space-y-4">
@@ -342,7 +394,8 @@ export default function Politics({ state, derived, dispatch }) {
         </div>
       </div>
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
-      {tab === 'parliament' && <ParliamentTab s={state} d={derived} dispatch={dispatch} onFound={() => setFounding(true)} onRename={setRenaming} onPolicy={setPolicy} />}
+      {tab === 'parliament' && <ParliamentTab s={state} d={derived} dispatch={dispatch} onFound={() => setFounding(true)} onRename={setRenaming} onPolicy={setPolicy} onDissolve={setDissolving} />}
+      {dissolving && <DissolveDialog s={state} party={dissolving} dispatch={dispatch} onClose={() => setDissolving(null)} />}
       {policy && (
         <PolicyDialog
           state={state}

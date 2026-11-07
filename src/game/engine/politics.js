@@ -1,7 +1,7 @@
 // 政治：政党支持率・選挙・連立・法律・内閣
 import { approach, clamp, sum } from '../core/math';
 import { CAPITAL_MAX, ELECTION_INTERVAL, MAJORITY, PARLIAMENT_SEATS, SUPERMAJORITY } from '../data/balance';
-import { COALITION_MIN_COMPAT, MAX_PARTIES, axisDistance, ideologyLabel, makeParty, partyCompatibility } from '../data/parties';
+import { COALITION_MIN_COMPAT, MAX_PARTIES, MIN_PARTIES, axisDistance, ideologyLabel, makeParty, partyCompatibility } from '../data/parties';
 import { POPS, POP_TURNOUT } from '../data/pops';
 import { compat, partyIds, partyOf, popPref, stanceOf } from './parties';
 import { LAWS, getLaw } from '../data/laws';
@@ -473,5 +473,79 @@ export function changePolicy(s, id, axes) {
     for (const [k, m] of Object.entries(s.politics.ministers)) if (m.party === p) delete s.politics.ministers[k];
     addLog(s, `政策の隔たりが大きくなり、${partyOf(s, p).name}が連立政権を離脱した。`, 'warn', 'politics');
   }
+  return true;
+}
+
+// ---------- 解党 ----------
+
+export const DISSOLVE_COST = 20;
+
+export function canDissolve(s, id) {
+  if (id === s.meta.partyId) return { ok: false, reason: '自分の党は解党できない（先に新党を結成して乗り換える）' };
+  if (s.parties.length <= MIN_PARTIES) return { ok: false, reason: `政党は最低${MIN_PARTIES}つ必要` };
+  if (s.politics.capital < DISSOLVE_COST) return { ok: false, reason: `政治資本が不足（${DISSOLVE_COST}必要）` };
+  return { ok: true };
+}
+
+/** 政策の近い党ほど多く受け取るように、数を整数で配分する（最大剰余方式） */
+function splitByAffinity(total, from, targets) {
+  const w = targets.map((p) => Math.exp(-2 * axisDistance(from.axes, p.axes)));
+  const sumW = w.reduce((a, b) => a + b, 0) || 1;
+  const raw = w.map((x) => (total * x) / sumW);
+  const out = raw.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const order = raw.map((v, i) => [v - Math.floor(v), i]).sort((a, b) => b[0] - a[0]);
+  for (let k = 0; left > 0; k++, left--) out[order[k % order.length][1]] += 1;
+  return Object.fromEntries(targets.map((p, i) => [p.id, out[i]]));
+}
+
+/** 解党した場合の議席の移り先と、与党連合への影響 */
+export function previewDissolve(s, id) {
+  const party = partyOf(s, id);
+  const rest = s.parties.filter((p) => p.id !== id);
+  const transfers = splitByAffinity(s.politics.seats[id] ?? 0, party, rest);
+  const coalition = s.politics.coalition.filter((p) => p !== id);
+  const coalitionSeats = sum(coalition.map((p) => (s.politics.seats[p] ?? 0) + (transfers[p] ?? 0)));
+  return { transfers, coalitionSeats, wasPartner: s.politics.coalition.includes(id) };
+}
+
+export function dissolveParty(s, id, rng) {
+  if (!canDissolve(s, id).ok) return false;
+  const party = partyOf(s, id);
+  const pol = s.politics;
+  const preview = previewDissolve(s, id);
+  const rest = s.parties.filter((p) => p.id !== id);
+
+  pol.capital -= DISSOLVE_COST;
+  // 議席：政策の近い党へ議員が移籍する
+  const seats = {};
+  for (const p of rest) seats[p.id] = (pol.seats[p.id] ?? 0) + (preview.transfers[p.id] ?? 0);
+  pol.seats = seats;
+  // 支持者：政策の近い党へ流れる
+  const supShare = splitByAffinity(1000, party, rest);
+  const support = {};
+  for (const p of rest) support[p.id] = (pol.support[p.id] ?? 0) + ((pol.support[id] ?? 0) * supShare[p.id]) / 1000;
+  pol.support = normalizeSupport(support);
+
+  pol.coalition = pol.coalition.filter((p) => p !== id);
+  let vacancies = false;
+  for (const [k, m] of Object.entries(pol.ministers)) {
+    if (m.party === id) {
+      delete pol.ministers[k];
+      vacancies = true;
+    }
+  }
+  pol.formerParties = [...(pol.formerParties ?? []), { ...party, dissolvedMonth: s.month }];
+  s.parties = rest;
+  if (vacancies && rng) refreshCabinet(s, rng);
+
+  const top = Object.entries(preview.transfers)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([pid, n]) => `${partyOf(s, pid).short}${n}`)
+    .join('・');
+  addLog(s, `${party.name}が解党した。${top ? `所属議員は${top}へ移籍。` : ''}${preview.wasPartner ? '連立与党の一角が消え、政権の枠組みが変わった。' : ''}`, 'politics', 'politics');
+  addNews(s, '政治', `${party.name}が解党。政界再編へ`);
   return true;
 }
