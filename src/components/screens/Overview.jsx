@@ -2,7 +2,7 @@ import { AlertTriangle, Bell, Building2, Coins, Info, Newspaper, PieChart, Spark
 import { Panel, Sparkline, Delta, Bar, Chip } from '../ui/kit';
 import { fmtPopulation, fmtTrillion } from '../../game/core/format';
 import { formatYM } from '../../game/core/calendar';
-import { PARTIES, getParty } from '../../game/data/parties';
+import { partyOf } from '../../game/engine/parties';
 import { POPS } from '../../game/data/pops';
 import { nextElectionLabel } from '../../game/engine/politics';
 import { satColor } from '../ui/colors';
@@ -125,12 +125,12 @@ export default function Overview({ state: s, derived: d, go }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="政党支持率と議会" icon={PieChart} bodyClass="p-3">
           <div className="mb-3 flex h-6 overflow-hidden rounded">
-            {PARTIES.map((p) => (
+            {s.parties.map((p) => (
               <div key={p.id} title={`${p.name} ${s.politics.seats[p.id]}議席`} style={{ width: `${(s.politics.seats[p.id] / 300) * 100}%`, background: p.color, opacity: coalition.includes(p.id) ? 1 : 0.35 }} />
             ))}
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
-            {[...PARTIES]
+            {[...s.parties]
               .sort((a, b) => s.politics.support[b.id] - s.politics.support[a.id])
               .map((p) => (
                 <div key={p.id} className="flex items-center gap-1.5 text-[13px]">
@@ -141,7 +141,7 @@ export default function Overview({ state: s, derived: d, go }) {
               ))}
           </div>
           <p className="mt-2 text-xs text-ink-dim">
-            与党連合 {coalition.map((p) => getParty(p).short).join('・')}：<span className="num font-bold text-ink">{d.coalitionSeats}</span> / 300議席
+            与党連合 {coalition.map((p) => partyOf(s, p).short).join('・')}：<span className="num font-bold text-ink">{d.coalitionSeats}</span> / 300議席
           </p>
         </Panel>
 

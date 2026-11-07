@@ -25,7 +25,7 @@ export const NATIONS = [
   },
   {
     id: 'zarkan', name: 'ザルカン首長国', color: '#b9853f', gov: '絶対君主制', econSystem: 'market',
-    gdp: 130, population: 2600, military: 56, baseGrowth: 2.5, aggression: 0.9, tradeAffinity: 0.6, environment: 40, sizeWeight: 0.9,
+    gdp: 130, population: 2600, military: 56, baseGrowth: 2.5, aggression: 0.9, tradeAffinity: 0.6, environment: 40, sizeWeight: 0.9, resource: true,
     desc: '豊富な原油を持つ首長国。原油価格の動向が国力を左右する。', relation: 48,
   },
   {

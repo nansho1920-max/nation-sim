@@ -3,7 +3,7 @@ import { Flag, Globe2, Handshake, Landmark, Shield, Swords, Trophy } from 'lucid
 import { Panel, Button, Chip, Bar, KV } from '../ui/kit';
 import WorldMap, { MAP_MODES, MapLegend } from '../world/WorldMap';
 import { ORGS } from '../../game/data/orgs';
-import { getNationDef } from '../../game/data/nations';
+import { mapOf } from '../../game/world/mapgen';
 import { DIPLO_ACTIONS, areNeighbors, diploAvailability, orgRequirements } from '../../game/engine/diplomacy';
 import { enemyOf, playerWarScore, playerWars, playerProvinceCount } from '../../game/engine/derived';
 import { fmtPopulation, fmtTrillion } from '../../game/core/format';
@@ -36,7 +36,7 @@ function NationPanel({ s, d, id, dispatch }) {
     );
   }
   const n = s.world.nations[id];
-  const def = getNationDef(id);
+  const def = n;
   const alive = s.world.owners.includes(id);
   const war = playerWars(s).find((w) => enemyOf(w) === id);
   const provinces = s.world.owners.filter((o) => o === id).length;
@@ -308,7 +308,7 @@ export default function World({ state: s, derived: d, dispatch }) {
                 </button>
               ))}
             </div>
-            <WorldMap world={s.world} player={player} mode={mode} selected={selected} onSelect={setSelected} />
+            <WorldMap map={mapOf(s)} world={s.world} player={player} mode={mode} selected={selected} onSelect={setSelected} />
             <div className="mt-2 px-1">
               <MapLegend mode={mode} />
             </div>

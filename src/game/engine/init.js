@@ -2,18 +2,20 @@
 import { makeRng } from '../core/rng';
 import { DIFFICULTIES, SAVE_VERSION, START_DATE } from '../data/balance';
 import { getScenario } from '../data/scenarios';
-import { NATIONS, INITIAL_OPINIONS, AI_NATION_IDS } from '../data/nations';
+import { NATIONS, INITIAL_OPINIONS } from '../data/nations';
 import { ORGS } from '../data/orgs';
 import { POPS } from '../data/pops';
-import { PARTY_IDS, getParty } from '../data/parties';
-import { getWorldMap } from '../world/mapgen';
+import { DEFAULT_PARTIES, makeParty } from '../data/parties';
+import { DEFAULT_WORLD_SEED, getWorldMap } from '../world/mapgen';
 import { addLog, addNews, normalizeSupport } from './effects';
 import { aggregateEffects, coalitionSeats } from './derived';
 import { dhondt, formCoalition, refreshCabinet, supportTarget } from './politics';
+import { partyOf } from './parties';
 import { runFiscal } from './economy';
 import { snapshot } from './history';
+import { generateRandomSetup } from './generator';
 
-// シナリオごとの初期の外交関係
+// 固定シナリオの初期の外交関係
 const START_DIPLOMACY = {
   standard: { trade: ['ornea', 'mireth'], orgs: ['cec'] },
   developing: { trade: [], orgs: [] },
@@ -22,21 +24,67 @@ const START_DIPLOMACY = {
   resource: { trade: ['celestia'], orgs: [] },
 };
 
-export function createNewGame({ scenarioId = 'standard', difficulty = 'normal', partyId = 'conservative', countryName, seed = 1 }) {
+/** シナリオと世界の設定を用意する（固定シナリオ or ランダム生成） */
+function buildWorldSetup(scenarioId, scenarioSeed, rng) {
+  if (scenarioId === 'random') {
+    const setup = generateRandomSetup(scenarioSeed ?? rng.int(1, 2 ** 31 - 1));
+    return {
+      sc: setup.scenario,
+      nationDefs: setup.nations,
+      worldSeed: setup.worldSeed,
+      rivalry: setup.rivalry,
+      alliances: setup.alliances,
+      orgs: setup.orgs,
+      startDiplo: { trade: setup.trade, orgs: setup.playerOrgs },
+    };
+  }
   const sc = getScenario(scenarioId);
+  const nationDefs = NATIONS.filter((n) => n.id !== 'player');
+  const rivalry = {};
+  for (const a of nationDefs) {
+    for (const b of nationDefs) {
+      if (a.id >= b.id) continue;
+      const key = `${a.id}|${b.id}`;
+      rivalry[key] = INITIAL_OPINIONS[key] ?? INITIAL_OPINIONS[`${b.id}|${a.id}`] ?? Math.round(50 + rng.range(-12, 12));
+    }
+  }
+  return {
+    sc,
+    nationDefs,
+    worldSeed: DEFAULT_WORLD_SEED,
+    rivalry,
+    alliances: { celestia: ['isthia'], isthia: ['celestia'], valdoria: ['zarkan'], zarkan: ['valdoria'], player: [] },
+    orgs: Object.fromEntries(ORGS.map((o) => [o.id, [...o.members]])),
+    startDiplo: START_DIPLOMACY[sc.id] ?? START_DIPLOMACY.standard,
+  };
+}
+
+export function createNewGame({ scenarioId = 'standard', scenarioSeed, difficulty = 'normal', partyId, parties, countryName, seed = 1 }) {
   const diff = DIFFICULTIES[difficulty] ?? DIFFICULTIES.normal;
   const rng = makeRng(seed);
-  const map = getWorldMap();
+  const { sc, nationDefs, worldSeed, rivalry, alliances, orgs: orgMembers, startDiplo } = buildWorldSetup(scenarioId, scenarioSeed, rng);
+
+  const partyList = (parties?.length ? parties : DEFAULT_PARTIES).map((p) => makeParty(p));
+  if (!partyList.some((p) => p.id === partyId)) partyId = partyList[0].id;
+
+  // 先頭はプレイヤー。地図はこの並びと領土の広がりやすさから決まる
+  const mapSpec = [{ id: 'player', sizeWeight: sc.sizeWeight ?? 0.8 }, ...nationDefs.map((n) => ({ id: n.id, sizeWeight: n.sizeWeight ?? 1 }))];
+  const map = getWorldMap(worldSeed, mapSpec);
 
   const nations = {};
-  for (const def of NATIONS) {
-    if (def.id === 'player') continue;
+  for (const def of nationDefs) {
     nations[def.id] = {
       id: def.id,
       name: def.name,
       color: def.color,
       gov: def.gov,
       econSystem: def.econSystem,
+      desc: def.desc,
+      aggression: def.aggression,
+      tradeAffinity: def.tradeAffinity,
+      baseGrowth: def.baseGrowth,
+      environment: def.environment,
+      resource: !!def.resource,
       gdp: def.gdp,
       population: def.population,
       military: def.military,
@@ -45,21 +93,17 @@ export function createNewGame({ scenarioId = 'standard', difficulty = 'normal', 
       sanctionTurns: 0,
     };
   }
-  const opinions = {};
-  for (const a of AI_NATION_IDS) {
-    for (const b of AI_NATION_IDS) {
-      if (a >= b) continue;
-      const key = `${a}|${b}`;
-      opinions[key] = INITIAL_OPINIONS[key] ?? INITIAL_OPINIONS[`${b}|${a}`] ?? Math.round(50 + rng.range(-12, 12));
-    }
-  }
-  const startDiplo = START_DIPLOMACY[sc.id] ?? START_DIPLOMACY.standard;
-  const orgs = Object.fromEntries(ORGS.map((o) => [o.id, [...o.members, ...(startDiplo.orgs.includes(o.id) ? ['player'] : [])]]));
+  const opinions = { ...rivalry };
+  const orgs = Object.fromEntries(Object.entries(orgMembers).map(([id, members]) => [id, [...members, ...(startDiplo.orgs.includes(id) ? ['player'] : [])]]));
 
   const s = {
     version: SAVE_VERSION,
+    parties: partyList,
     meta: {
       scenarioId: sc.id,
+      scenarioName: sc.name,
+      scenarioSeed: scenarioId === 'random' ? scenarioSeed ?? null : null,
+      worldSeed,
       difficulty: diff.id,
       partyId,
       countryName: countryName?.trim() || sc.countryName,
@@ -126,7 +170,9 @@ export function createNewGame({ scenarioId = 'standard', difficulty = 'normal', 
       wars: [],
       warSeq: 0,
       trade: Object.fromEntries(startDiplo.trade.map((t) => [t, true])),
-      alliances: { celestia: ['isthia'], isthia: ['celestia'], valdoria: ['zarkan'], zarkan: ['valdoria'], player: [] },
+      alliances: { player: [], ...alliances },
+      mapSpec,
+      rivalry,
       orgs,
       opinions,
       reputation: 50,
@@ -146,12 +192,12 @@ export function createNewGame({ scenarioId = 'standard', difficulty = 'normal', 
   // 前回の選挙でプレイヤーの党が政権を獲得した、という状態を作る
   const fx = aggregateEffects(s);
   let support = supportTarget(s, fx);
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 30; i++) {
     support = normalizeSupport({ ...support, [partyId]: support[partyId] + (i === 0 ? 8 : 3) });
     s.politics.support = support;
     s.politics.seats = dhondt(support, 300);
-    s.politics.coalition = formCoalition(s.politics.seats, partyId);
-    const largest = PARTY_IDS.reduce((a, b) => (s.politics.seats[a] >= s.politics.seats[b] ? a : b));
+    s.politics.coalition = formCoalition(s, s.politics.seats, partyId);
+    const largest = partyList.map((p) => p.id).reduce((a, b) => (s.politics.seats[a] >= s.politics.seats[b] ? a : b));
     if (coalitionSeats(s) >= 151 && largest === partyId) break;
   }
   refreshCabinet(s, rng);
@@ -164,10 +210,10 @@ export function createNewGame({ scenarioId = 'standard', difficulty = 'normal', 
   s.econ.debt = debt;
 
   s.history.push(snapshot(s));
-  const partners = s.politics.coalition.filter((p) => p !== partyId).map((p) => getParty(p).short);
-  addLog(s, `${s.meta.countryName}に${getParty(partyId).name}政権が発足した。${partners.length ? `（${partners.join('・')}との連立）` : ''}`, 'info', 'politics');
+  const partners = s.politics.coalition.filter((p) => p !== partyId).map((p) => partyOf(s, p).short);
+  addLog(s, `${s.meta.countryName}に${partyOf(s, partyId).name}政権が発足した。${partners.length ? `（${partners.join('・')}との連立）` : ''}`, 'info', 'politics');
   addLog(s, `シナリオ「${sc.name}」— ${sc.desc}`, 'info', 'general');
-  addNews(s, '政治', `${getParty(partyId).name}政権が発足。新首相が就任会見`);
+  addNews(s, '政治', `${partyOf(s, partyId).name}政権が発足。新首相が就任会見`);
   s.rng = rng.state;
   return s;
 }

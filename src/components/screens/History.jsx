@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ScrollText, Vote } from 'lucide-react';
 import { Panel } from '../ui/kit';
 import { formatDate, formatYM } from '../../game/core/calendar';
-import { PARTIES } from '../../game/data/parties';
 
 const FILTERS = [
   ['all', 'すべて'],
@@ -37,7 +36,7 @@ export default function History({ state: s }) {
             <thead>
               <tr className="border-b border-line text-[11px] text-ink-faint">
                 <th className="px-3 py-2 text-left font-medium">日付</th>
-                {PARTIES.map((p) => (
+                {s.parties.map((p) => (
                   <th key={p.id} className="px-2 py-2 text-right font-medium" style={{ color: p.color }}>
                     {p.short}
                   </th>
@@ -49,12 +48,12 @@ export default function History({ state: s }) {
               {s.politics.elections.map((e, i) => (
                 <tr key={i} className="border-b border-line/60">
                   <td className="num px-3 py-1.5">{formatYM(e.date)}</td>
-                  {PARTIES.map((p) => (
+                  {s.parties.map((p) => (
                     <td key={p.id} className={`num px-2 py-1.5 text-right ${e.coalition.includes(p.id) ? 'font-bold text-ink' : 'text-ink-dim'}`}>
                       {e.seats[p.id]}
                     </td>
                   ))}
-                  <td className="px-3 py-1.5 text-[12px]">{e.coalition.map((c) => PARTIES.find((p) => p.id === c).short).join('・')}</td>
+                  <td className="px-3 py-1.5 text-[12px]">{e.coalition.map((c) => s.parties.find((p) => p.id === c)?.short ?? c).join('・')}</td>
                 </tr>
               ))}
             </tbody>

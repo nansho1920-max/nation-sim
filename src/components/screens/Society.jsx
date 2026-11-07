@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { Activity, Baby, Users } from 'lucide-react';
 import { Panel, Bar, KV, Chip } from '../ui/kit';
-import { POPS, POP_PARTY_PREF } from '../../game/data/pops';
-import { PARTIES } from '../../game/data/parties';
+import { POPS } from '../../game/data/pops';
+import { partyOf, popPref } from '../../game/engine/parties';
 import { popTargets } from '../../game/engine/society';
 import { fmtPopulation } from '../../game/core/format';
 import { satColor } from '../ui/colors';
@@ -35,7 +35,7 @@ export default function Society({ state: s, derived: d }) {
           const Icon = getIcon(p.icon);
           const pop = s.pops[p.id];
           const t = targets[p.id];
-          const prefs = Object.entries(POP_PARTY_PREF[p.id]).sort((a, b) => b[1] - a[1]).slice(0, 2);
+          const prefs = Object.entries(popPref(s, p.id)).sort((a, b) => b[1] - a[1]).slice(0, 2);
           return (
             <section key={p.id} className="panel p-4">
               <header className="flex items-start gap-3">
@@ -78,7 +78,7 @@ export default function Society({ state: s, derived: d }) {
               </ul>
               <div className="mt-2 flex flex-wrap gap-1">
                 {prefs.map(([pid]) => {
-                  const party = PARTIES.find((x) => x.id === pid);
+                  const party = partyOf(s, pid);
                   return (
                     <Chip key={pid}>
                       <span className="h-2 w-2 rounded-full" style={{ background: party.color }} />

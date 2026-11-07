@@ -6,7 +6,7 @@ import { addDay } from '../core/calendar';
 import { clamp } from '../core/math';
 import { ENERGY_PROJECTS, TERM_MONTHS, TAXES, BUDGET_CATEGORIES } from '../data/balance';
 import { MINISTRIES } from '../data/cabinet';
-import { getParty } from '../data/parties';
+import { partyOf } from './parties';
 import { getTech } from '../data/techs';
 import { addLog, addModifier, applyEffects, ensureLiquidity } from './effects';
 import { aggregateEffects, approval, debtRatio } from './derived';
@@ -217,21 +217,21 @@ export function gameReducer(state, action) {
         s.politics.capital -= 5;
         s.politics.ministers[action.ministry] = cand;
         const m = MINISTRIES.find((x) => x.id === action.ministry);
-        addLog(s, `${m.name}に${cand.name}（${getParty(cand.party).short}）を任命した。`, 'action', 'politics');
+        addLog(s, `${m.name}に${cand.name}（${partyOf(s, cand.party).short}）を任命した。`, 'action', 'politics');
       });
     case 'INVITE_PARTY':
       return mutate(state, (s) => {
         if (!canInvite(s, action.partyId).ok) return;
         s.politics.capital -= 15;
         s.politics.coalition.push(action.partyId);
-        addLog(s, `${getParty(action.partyId).name}を連立政権に迎え入れた。`, 'politics', 'politics');
+        addLog(s, `${partyOf(s, action.partyId).name}を連立政権に迎え入れた。`, 'politics', 'politics');
       });
     case 'DISMISS_PARTY':
       return mutate(state, (s) => {
         if (action.partyId === s.meta.partyId) return;
         s.politics.coalition = s.politics.coalition.filter((p) => p !== action.partyId);
         for (const [k, m] of Object.entries(s.politics.ministers)) if (m.party === action.partyId) delete s.politics.ministers[k];
-        addLog(s, `${getParty(action.partyId).name}が連立政権から離脱した。`, 'warn', 'politics');
+        addLog(s, `${partyOf(s, action.partyId).name}が連立政権から離脱した。`, 'warn', 'politics');
       });
     case 'DIPLOMACY':
       return mutate(state, (s, rng) => performDiplomacy(s, action.action, action.targetId, rng));

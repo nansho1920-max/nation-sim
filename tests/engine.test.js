@@ -6,6 +6,8 @@ import { transferProvinces } from '../src/game/engine/diplomacy';
 import { migrate } from '../src/game/save';
 import { getWorldMap } from '../src/game/world/mapgen';
 import { SCENARIOS } from '../src/game/data/scenarios';
+import { generateRandomParties, generateRandomSetup } from '../src/game/engine/generator';
+import { mapOf } from '../src/game/world/mapgen';
 import { LAWS } from '../src/game/data/laws';
 import { EVENTS } from '../src/game/data/events';
 import { PARLIAMENT_SEATS, SAVE_VERSION } from '../src/game/data/balance';
@@ -139,10 +141,33 @@ describe('セーブデータ', () => {
   });
   it('移行関数を順番に適用して最新版に変換する', () => {
     const s = { ...JSON.parse(JSON.stringify(newGame())), version: 1 };
-    const migrations = { 1: (d) => ({ ...d, version: 2, migrated: true }) };
-    const out = migrate(s, migrations, SAVE_VERSION);
-    expect(out.version).toBe(SAVE_VERSION);
+    const migrations = { 1: (d) => ({ ...d, version: 2, migrated: true }), 2: (d) => ({ ...d, version: 3 }) };
+    const out = migrate(s, migrations, 3);
+    expect(out.version).toBe(3);
     expect(out.migrated).toBe(true);
+  });
+  it('v2のセーブデータをv3に移行して、そのまま遊び続けられる', () => {
+    const v3 = JSON.parse(JSON.stringify(play(newGame(), 200)));
+    const v2 = { ...v3, version: 2 };
+    delete v2.parties;
+    delete v2.meta.worldSeed;
+    delete v2.meta.scenarioName;
+    delete v2.world.mapSpec;
+    delete v2.world.rivalry;
+    for (const n of Object.values(v2.world.nations)) {
+      delete n.aggression;
+      delete n.tradeAffinity;
+      delete n.baseGrowth;
+      delete n.environment;
+      delete n.resource;
+      delete n.desc;
+    }
+    const out = migrate(v2);
+    expect(out.version).toBe(SAVE_VERSION);
+    expect(out.parties.length).toBe(6);
+    const later = play(out, 400);
+    expect(findNonFinite(later)).toBeNull();
+    expect(later.month).toBeGreaterThan(out.month);
   });
   it('移行手段のない古いデータや壊れたデータは null', () => {
     expect(migrate({ version: 1, turn: 3 })).toBeNull();
@@ -170,4 +195,52 @@ describe('ゲームオーバー', () => {
     expect(out.gameOver?.type).toBe('default');
     expect(debtRatio(out)).toBeGreaterThan(300);
   });
+});
+
+describe('自作の政党', () => {
+  const custom = [
+    { id: 'mine', name: '未来創造党', short: '未来', color: '#ff00aa', axes: { econ: 0.2, social: -0.4, eco: 0.6, nation: -0.2, reform: 0.8 } },
+    { id: 'old', name: '伝統党', short: '伝統', color: '#335577', axes: { econ: 0.5, social: 0.9, eco: -0.3, nation: 0.6, reform: -0.5 } },
+    { id: 'left', name: '労働者党', short: '労働', color: '#cc3333', axes: { econ: -0.9, social: 0.1, eco: 0, nation: 0.2, reform: 0 } },
+  ];
+  it('自作の政党だけで議会と政権が成立し、10年遊べる', () => {
+    const s0 = newGame({ parties: custom, partyId: 'mine' });
+    expect(s0.parties.map((p) => p.id)).toEqual(['mine', 'old', 'left']);
+    expect(Object.keys(s0.politics.seats).sort()).toEqual(['left', 'mine', 'old']);
+    expect(s0.politics.coalition).toContain('mine');
+    const s = play(s0, 4000, 1);
+    expect(findNonFinite(s)).toBeNull();
+    expect(Object.keys(s.politics.support).sort()).toEqual(['left', 'mine', 'old']);
+  });
+  it('既定の政党を指すイベント効果は、政策の近い自作政党に読み替えられる', () => {
+    const s = structuredClone(newGame({ parties: custom, partyId: 'mine' }));
+    const before = { ...s.politics.support };
+    s.events.pending = { id: 'general_strike', ctx: {}, day: s.day, date: s.date };
+    const after = R(s, { type: 'RESOLVE_EVENT', index: 1 }); // 強制排除 → 社民党+3 は労働者党へ
+    expect(after.politics.support.left).toBeGreaterThan(before.left);
+    expect(Object.keys(after.politics.support)).not.toContain('socdem');
+  });
+  it('ランダムな政党構成は決定論的に生成される', () => {
+    expect(generateRandomParties(5)).toEqual(generateRandomParties(5));
+    expect(generateRandomParties(5, 7).length).toBe(7);
+  });
+});
+
+describe('ランダムシナリオ', () => {
+  it('同じシードからは同じ国・世界が生成される', () => {
+    expect(generateRandomSetup(99)).toEqual(generateRandomSetup(99));
+    expect(generateRandomSetup(99).scenario.countryName).not.toBe(generateRandomSetup(100).scenario.countryName);
+  });
+  for (const seed of [1, 2, 3, 4, 5]) {
+    it(`ランダム世界 #${seed}：地図・外国が生成され、10年遊べる`, () => {
+      const s0 = newGame({ scenarioId: 'random', scenarioSeed: seed });
+      const map = mapOf(s0);
+      expect(Object.keys(s0.world.nations).length).toBe(7);
+      for (const [nation, cap] of Object.entries(s0.world.capitals)) expect(s0.world.owners[cap]).toBe(nation);
+      expect(s0.world.owners.length).toBe(map.provinces.length);
+      const s = play(s0, 4000, seed % 2);
+      expect(findNonFinite(s)).toBeNull();
+      expect(s.gameOver).not.toBeNull();
+    });
+  }
 });

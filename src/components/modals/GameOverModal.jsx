@@ -4,8 +4,7 @@ import { Button, Bar } from '../ui/kit';
 import { evaluate } from '../../game/engine/scoring';
 import { formatYM } from '../../game/core/calendar';
 import { fmtTrillion } from '../../game/core/format';
-import { getParty } from '../../game/data/parties';
-import { getScenario } from '../../game/data/scenarios';
+import { partyOf } from '../../game/engine/parties';
 
 const RANK_COLOR = { S: '#ecc77e', A: '#4cb782', B: '#4f9fd6', C: '#c9c27a', D: '#e05252' };
 
@@ -25,7 +24,7 @@ export default function GameOverModal({ state: s, onNewGame, onReview }) {
           </h2>
           <p className="mx-auto mt-3 max-w-xl leading-relaxed text-ink">{s.gameOver.reason}</p>
           <p className="mt-1 text-xs text-ink-faint">
-            {s.meta.countryName}・{getParty(s.meta.partyId).name}政権・シナリオ「{getScenario(s.meta.scenarioId).name}」・{formatYM(s.date)}まで在任{s.month}ヶ月
+            {s.meta.countryName}・{partyOf(s, s.meta.partyId).name}政権・シナリオ「{s.meta.scenarioName}」・{formatYM(s.date)}まで在任{s.month}ヶ月
           </p>
         </div>
         <div className="grid gap-5 px-6 pb-6 md:grid-cols-[180px_1fr]">

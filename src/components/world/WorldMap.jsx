@@ -1,6 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { getWorldMap, MAP_W, MAP_H } from '../../game/world/mapgen';
-import { getNationDef } from '../../game/data/nations';
+import { MAP_W, MAP_H } from '../../game/world/mapgen';
 import { RELATION_SCALE, HEAT_SCALE, ENV_SCALE, mix, scale } from '../ui/colors';
 import { fmtPopulation, fmtTrillion } from '../../game/core/format';
 
@@ -20,11 +19,10 @@ const PLAYER_COLOR = '#e3b341';
 function nationInfo(world, player, id) {
   if (id === 'player') return { ...player, id: 'player', color: PLAYER_COLOR };
   const n = world.nations[id];
-  return { ...n, environment: getNationDef(id).environment };
+  return n;
 }
 
-function WorldMap({ world, player, mode, selected, onSelect }) {
-  const map = getWorldMap();
+function WorldMap({ map, world, player, mode, selected, onSelect }) {
   const [hover, setHover] = useState(null);
   const owners = world.owners;
 

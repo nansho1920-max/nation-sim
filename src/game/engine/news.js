@@ -1,5 +1,4 @@
 // 毎月の状態変化から新聞の見出しを生成する（数値計算には一切関与しない）
-import { PARTIES } from '../data/parties';
 import { POPS } from '../data/pops';
 import { addNews } from './effects';
 import { approval } from './derived';
@@ -23,7 +22,7 @@ export function generateMonthlyNews(s, prev, rng) {
   if (appr - prev.approval > 3) items.push(['政治', `内閣支持率${appr.toFixed(0)}%に上昇`]);
   else if (appr - prev.approval < -3) items.push(['政治', `内閣支持率${appr.toFixed(0)}%に下落。政権運営に暗雲`]);
 
-  const top = [...PARTIES].sort((a, b) => s.politics.support[b.id] - s.politics.support[a.id])[0];
+  const top = [...s.parties].sort((a, b) => s.politics.support[b.id] - s.politics.support[a.id])[0];
   if (rng.chance(0.25)) items.push(['政治', `世論調査：${top.name}が支持率${s.politics.support[top.id].toFixed(1)}%で首位`]);
   const until = s.politics.nextElection - s.month;
   if (until > 0 && until <= 3) items.push(['政治', `総選挙まで残り${until}ヶ月。各党が選挙戦を本格化`]);

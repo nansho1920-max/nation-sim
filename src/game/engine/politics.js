@@ -1,8 +1,9 @@
 // 政治：政党支持率・選挙・連立・法律・内閣
 import { approach, clamp, sum } from '../core/math';
 import { CAPITAL_MAX, ELECTION_INTERVAL, MAJORITY, PARLIAMENT_SEATS, SUPERMAJORITY } from '../data/balance';
-import { COALITION_MIN_COMPAT, PARTIES, PARTY_IDS, compatibility, getParty } from '../data/parties';
-import { POPS, POP_PARTY_PREF, POP_TURNOUT } from '../data/pops';
+import { COALITION_MIN_COMPAT } from '../data/parties';
+import { POPS, POP_TURNOUT } from '../data/pops';
+import { compat, partyIds, partyOf, popPref, stanceOf } from './parties';
 import { LAWS, getLaw } from '../data/laws';
 import { MINISTRIES, SURNAMES, GIVEN_NAMES } from '../data/cabinet';
 import { addLog, addNews, applyEffects, normalizeSupport, registerSpecial } from './effects';
@@ -16,13 +17,13 @@ export function supportTarget(s, fx) {
   const coalition = new Set(s.politics.coalition);
   const soc = s.society;
   const val = {};
-  for (const p of PARTY_IDS) {
+  for (const p of partyIds(s)) {
     let v = 0;
     for (const pop of POPS) {
       const sat = s.pops[pop.id].sat;
       // 与党は満足度が高くないと票を失い、野党は不満の受け皿になる
       const mood = coalition.has(p) ? 0.15 + (sat / 100) * 1.6 : 1.45 - (sat / 100) * 0.9;
-      v += shares[pop.id] * POP_TURNOUT[pop.id] * POP_PARTY_PREF[pop.id][p] * mood;
+      v += shares[pop.id] * POP_TURNOUT[pop.id] * popPref(s, pop.id)[p] * mood;
     }
     val[p] = v;
   }
@@ -31,15 +32,28 @@ export function supportTarget(s, fx) {
   const player = s.meta.partyId;
   val[player] += Math.max(0, appr - 35) * 0.0045 - Math.max(0, 35 - appr) * 0.002;
   for (const p of s.politics.coalition) if (p !== player) val[p] += Math.max(0, appr - 40) * 0.001;
-  val.reform += (soc.corruption / 100) * 0.06;
-  val.green += (Math.max(0, 60 - soc.environment) / 100) * 0.08 + (s.world.orgs.ccf?.includes('player') ? 0.01 : 0);
-  val.nationalist += (soc.tension / 100) * 0.05 + playerWars(s).length * 0.03 + (fx.isolation ? 0.01 : 0);
-  val.socdem += Math.max(0, soc.gini - 0.33) * 0.3;
-  val.liberal += (Math.max(0, (s.econ.taxes.income + s.econ.taxes.corporate) / 2 - 22) / 100) * 0.3;
-  val.conservative += (Math.max(0, debtRatio(s) - 100) / 100) * 0.03;
+  // 社会情勢に応じて、その争点を掲げる政党に追い風が吹く（政策軸の位置で判定）
+  const issues = {
+    reform: (soc.corruption / 100) * 0.06,
+    eco: (Math.max(0, 60 - soc.environment) / 100) * 0.08 + (s.world.orgs.ccf?.includes('player') ? 0.01 : 0),
+    nation: (soc.tension / 100) * 0.05 + playerWars(s).length * 0.03 + (fx.isolation ? 0.01 : 0),
+    left: Math.max(0, soc.gini - 0.33) * 0.43,
+    right: (Math.max(0, (s.econ.taxes.income + s.econ.taxes.corporate) / 2 - 22) / 100) * 0.33,
+    discipline: (Math.max(0, debtRatio(s) - 100) / 100) * 0.05,
+  };
+  for (const party of s.parties) {
+    const a = party.axes;
+    val[party.id] +=
+      Math.max(0, a.reform) * issues.reform +
+      Math.max(0, a.eco) * issues.eco +
+      Math.max(0, a.nation) * issues.nation +
+      Math.max(0, -a.econ) * issues.left +
+      Math.max(0, a.econ) * issues.right +
+      Math.max(0, (a.econ + a.social) / 2) * issues.discipline;
+  }
   const total = sum(Object.values(val));
   const out = {};
-  for (const p of PARTY_IDS) out[p] = (val[p] / total) * 100;
+  for (const p of partyIds(s)) out[p] = (val[p] / total) * 100;
   return out;
 }
 
@@ -47,7 +61,7 @@ export function runPolitics(s, fx, rng) {
   const pol = s.politics;
   const target = supportTarget(s, fx);
   const next = {};
-  for (const p of PARTY_IDS) next[p] = approach(pol.support[p], target[p], 0.18) + rng.normal() * 0.25;
+  for (const p of partyIds(s)) next[p] = approach(pol.support[p], target[p], 0.18) + rng.normal() * 0.25;
   pol.support = normalizeSupport(next);
 
   // 政治資本
@@ -66,8 +80,9 @@ export function runPolitics(s, fx, rng) {
 // ---------- 選挙 ----------
 
 export function dhondt(votes, seats, threshold = 3) {
-  const eligible = PARTY_IDS.filter((p) => votes[p] >= threshold);
-  const out = Object.fromEntries(PARTY_IDS.map((p) => [p, 0]));
+  const ids = Object.keys(votes);
+  const eligible = ids.filter((p) => votes[p] >= threshold);
+  const out = Object.fromEntries(ids.map((p) => [p, 0]));
   for (let i = 0; i < seats; i++) {
     let best = eligible[0];
     let bestQ = -1;
@@ -83,18 +98,18 @@ export function dhondt(votes, seats, threshold = 3) {
   return out;
 }
 
-export function formCoalition(seats, player) {
+export function formCoalition(s, seats, player) {
   if (seats[player] >= MAJORITY) return [player];
-  const candidates = PARTY_IDS.filter((p) => p !== player && seats[p] > 0 && compatibility(player, p) >= COALITION_MIN_COMPAT);
+  const candidates = partyIds(s).filter((p) => p !== player && seats[p] > 0 && compat(s, player, p) >= COALITION_MIN_COMPAT);
   let bestMajority = null;
   let bestMinority = [player];
   for (let mask = 1; mask < 1 << candidates.length; mask++) {
     const subset = candidates.filter((_, i) => mask & (1 << i));
-    const ok = subset.every((a, i) => subset.slice(i + 1).every((b) => compatibility(a, b) >= 0.25));
+    const ok = subset.every((a, i) => subset.slice(i + 1).every((b) => compat(s, a, b) >= 0.25));
     if (!ok) continue;
     const members = [player, ...subset];
     const total = sum(members.map((p) => seats[p]));
-    const avgCompat = sum(subset.map((p) => compatibility(player, p))) / subset.length;
+    const avgCompat = sum(subset.map((p) => compat(s, player, p))) / subset.length;
     if (total >= MAJORITY) {
       const score = [subset.length, -avgCompat, total];
       if (!bestMajority || score[0] < bestMajority.score[0] || (score[0] === bestMajority.score[0] && (score[1] < bestMajority.score[1] || (score[1] === bestMajority.score[1] && score[2] < bestMajority.score[2])))) {
@@ -111,28 +126,28 @@ export function runElection(s, rng, reason) {
   const pol = s.politics;
   const player = s.meta.partyId;
   const votes = {};
-  for (const p of PARTY_IDS) votes[p] = Math.max(0.3, pol.support[p] * (1 + rng.normal() * 0.05));
+  for (const p of partyIds(s)) votes[p] = Math.max(0.3, pol.support[p] * (1 + rng.normal() * 0.05));
   const norm = normalizeSupport(votes);
   const seats = dhondt(norm, PARLIAMENT_SEATS);
   const prevSeats = { ...pol.seats };
   pol.seats = seats;
-  pol.coalition = formCoalition(seats, player);
+  pol.coalition = formCoalition(s, seats, player);
   const coalSeats = coalitionSeats(s);
-  const largest = PARTY_IDS.reduce((a, b) => (seats[a] >= seats[b] ? a : b));
+  const largest = partyIds(s).reduce((a, b) => (seats[a] >= seats[b] ? a : b));
   pol.elections.push({ month: s.month, date: { ...s.date }, votes: norm, seats, coalition: [...pol.coalition], reason });
 
-  const summary = PARTIES.filter((p) => seats[p.id] > 0)
+  const summary = s.parties.filter((p) => seats[p.id] > 0)
     .sort((a, b) => seats[b.id] - seats[a.id])
     .map((p) => `${p.short}${seats[p.id]}`)
     .join('・');
-  addLog(s, `【総選挙】${reason}の結果: ${summary}（与党 ${getParty(player).name} ${seats[player]}議席、前回${prevSeats[player] ?? '-'}）`, 'politics', 'politics');
-  addNews(s, '政治', `総選挙の開票終了。${getParty(largest).name}が第一党に（${seats[largest]}議席）`);
+  addLog(s, `【総選挙】${reason}の結果: ${summary}（与党 ${partyOf(s, player).name} ${seats[player]}議席、前回${prevSeats[player] ?? '-'}）`, 'politics', 'politics');
+  addNews(s, '政治', `総選挙の開票終了。${partyOf(s, largest).name}が第一党に（${seats[largest]}議席）`);
 
   if (coalSeats < MAJORITY && largest !== player) {
     s.gameOver = {
       type: 'election',
       title: '政権交代',
-      reason: `総選挙で与党連合は${coalSeats}議席にとどまり過半数（${MAJORITY}）を失った。第一党となった${getParty(largest).name}が新政権を樹立した。`,
+      reason: `総選挙で与党連合は${coalSeats}議席にとどまり過半数（${MAJORITY}）を失った。第一党となった${partyOf(s, largest).name}が新政権を樹立した。`,
     };
     return;
   }
@@ -141,7 +156,7 @@ export function runElection(s, rng, reason) {
   pol.fatigue = Math.max(0, (pol.fatigue ?? 0) - 4); // 選挙勝利後のハネムーン
   pol.capital = clamp(pol.capital + 15, 0, CAPITAL_MAX);
   pol.nextElection = s.month + ELECTION_INTERVAL;
-  const partners = pol.coalition.filter((p) => p !== player).map((p) => getParty(p).name);
+  const partners = pol.coalition.filter((p) => p !== player).map((p) => partyOf(s, p).name);
   addLog(
     s,
     coalSeats >= MAJORITY
@@ -258,8 +273,8 @@ export function predictVote(s, law, repeal = false) {
   const pol = s.politics;
   const player = s.meta.partyId;
   const needed = law.constitutional ? SUPERMAJORITY : MAJORITY;
-  const rows = PARTY_IDS.map((p) => {
-    const stance = (law.stance[p] ?? 0) * (repeal ? -1 : 1);
+  const rows = partyIds(s).map((p) => {
+    const stance = stanceOf(s, law, p) * (repeal ? -1 : 1);
     const inCoalition = pol.coalition.includes(p);
     let vote;
     if (p === player) vote = 'yes';
@@ -312,9 +327,9 @@ export function proposeLaw(s, lawId, repeal = false) {
 export function canInvite(s, partyId) {
   const pol = s.politics;
   if (pol.coalition.includes(partyId)) return { ok: false, reason: '連立中' };
-  if (compatibility(s.meta.partyId, partyId) < COALITION_MIN_COMPAT) return { ok: false, reason: '政策の隔たりが大きすぎる' };
-  const conflict = pol.coalition.find((p) => compatibility(p, partyId) < 0.25);
-  if (conflict) return { ok: false, reason: `${getParty(conflict).short}と相容れない` };
+  if (compat(s, s.meta.partyId, partyId) < COALITION_MIN_COMPAT) return { ok: false, reason: '政策の隔たりが大きすぎる' };
+  const conflict = pol.coalition.find((p) => compat(s, p, partyId) < 0.25);
+  if (conflict) return { ok: false, reason: `${partyOf(s, conflict).short}と相容れない` };
   if (pol.capital < 15) return { ok: false, reason: '政治資本が不足（15必要）' };
   return { ok: true };
 }

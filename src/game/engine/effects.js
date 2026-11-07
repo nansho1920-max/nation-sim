@@ -1,8 +1,20 @@
 // イベントや行動の「効果」を状態に適用する共通処理と、UI向けの効果説明。
 // 状態 s は呼び出し側で複製済み（ミュータブルに変更してよい）であることが前提。
 import { clamp } from '../core/math';
-import { PARTY_IDS } from '../data/parties';
 import { POP_IDS, getPop } from '../data/pops';
+import { DEFAULT_PARTIES, axisDistance } from '../data/parties';
+
+/**
+ * イベントが「国家主権党 +2%」のように既定の政党を指定していても、
+ * プレイヤーが作った政党構成ではその党が存在しないことがある。
+ * その場合は政策が最も近い政党に読み替える。
+ */
+export function resolveParty(s, key) {
+  if (s.parties?.some((p) => p.id === key)) return key;
+  const def = DEFAULT_PARTIES.find((p) => p.id === key);
+  if (!def || !s.parties?.length) return null;
+  return s.parties.reduce((best, p) => (axisDistance(p.axes, def.axes) < axisDistance(best.axes, def.axes) ? p : best)).id;
+}
 import { fmtTrillion } from '../core/format';
 
 const SPECIALS = {};
@@ -39,9 +51,10 @@ export function addModifier(s, mod) {
 }
 
 export function normalizeSupport(support) {
-  const total = PARTY_IDS.reduce((a, p) => a + Math.max(0.5, support[p]), 0);
+  const ids = Object.keys(support);
+  const total = ids.reduce((a, p) => a + Math.max(0.5, support[p]), 0);
   const out = {};
-  for (const p of PARTY_IDS) out[p] = (Math.max(0.5, support[p]) / total) * 100;
+  for (const p of ids) out[p] = (Math.max(0.5, support[p]) / total) * 100;
   return out;
 }
 
@@ -107,7 +120,10 @@ export function applyEffects(s, eff, ctx = {}, rng = null) {
         break;
       case 'partySupport': {
         const sup = { ...s.politics.support };
-        for (const [p, d] of Object.entries(v)) sup[p] = (sup[p] ?? 0) + d;
+        for (const [key, d] of Object.entries(v)) {
+          const p = resolveParty(s, key);
+          if (p) sup[p] = (sup[p] ?? 0) + d;
+        }
         s.politics.support = normalizeSupport(sup);
         break;
       }
@@ -187,7 +203,7 @@ export function describeEffects(eff, s) {
     else if (key === 'treasury') out.push(chip(`国庫 ${v > 0 ? '+' : '−'}${fmtTrillion(Math.abs(v))}`, v > 0));
     else if (key === 'pops') for (const [p, d] of Object.entries(v)) out.push(chip(`${getPop(p).name} ${signed(d)}`, d > 0));
     else if (key === 'allPops') out.push(chip(`全国民の満足度 ${signed(v)}`, v > 0));
-    else if (key === 'partySupport') for (const [p, d] of Object.entries(v)) out.push(chip(`${p === 'ruling' ? '与党' : p}支持 ${signed(d, '%', 1)}`, d > 0, true));
+    else if (key === 'partySupport') for (const [p, d] of Object.entries(v)) out.push(chip(`${s.parties?.find((x) => x.id === resolveParty(s, p))?.short ?? p}支持 ${signed(d, '%', 1)}`, d > 0, true));
     else if (key === 'modifier') {
       for (const [mk, mv] of Object.entries(v.effects ?? {})) {
         if (mk === 'popTarget') {

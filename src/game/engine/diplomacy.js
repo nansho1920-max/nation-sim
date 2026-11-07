@@ -1,8 +1,7 @@
 // 外交・戦争・AI国家の行動
 import { approach, clamp, sum } from '../core/math';
-import { AI_NATION_IDS, INITIAL_OPINIONS, getNationDef } from '../data/nations';
 import { ORGS, getOrg } from '../data/orgs';
-import { getWorldMap } from '../world/mapgen';
+import { mapOf } from '../world/mapgen';
 import { addLog, addModifier, addNews, applyEffects, registerSpecial } from './effects';
 import { aggregateEffects, energyStats, militaryPower, ministerEff, playerWars } from './derived';
 
@@ -18,7 +17,7 @@ const setOpinion = (s, a, b, v) => {
 
 /** 2国が国境を接しているか */
 export function areNeighbors(s, a, b) {
-  const map = getWorldMap();
+  const map = mapOf(s);
   const owners = s.world.owners;
   for (const p of map.provinces) {
     if (owners[p.id] !== a) continue;
@@ -28,7 +27,7 @@ export function areNeighbors(s, a, b) {
 }
 
 export function neighborsOf(s, id) {
-  const map = getWorldMap();
+  const map = mapOf(s);
   const owners = s.world.owners;
   const out = new Set();
   for (const p of map.provinces) {
@@ -39,13 +38,13 @@ export function neighborsOf(s, id) {
 }
 
 function provinceWeights(s, id) {
-  const map = getWorldMap();
+  const map = mapOf(s);
   return sum(map.provinces.filter((p) => s.world.owners[p.id] === id).map((p) => p.popWeight));
 }
 
 /** 国境沿いの州を勝者へ割譲する。人口とGDPも州の人口比で移動する */
 export function transferProvinces(s, from, to, count) {
-  const map = getWorldMap();
+  const map = mapOf(s);
   const owners = s.world.owners;
   const capitalOf = (id) => s.world.capitals[id];
   const moved = [];
@@ -206,7 +205,7 @@ function runWars(s, fx, rng) {
 // ---------- AI国家 ----------
 
 function relationBaseline(s, n, fx) {
-  const def = getNationDef(n.id);
+  const def = n;
   let base = 50;
   if (s.world.trade[n.id] && !fx.isolation) base += 10;
   if ((s.world.alliances.player ?? []).includes(n.id)) base += 20;
@@ -230,14 +229,15 @@ function relationBaseline(s, n, fx) {
 function runAI(s, fx, rng) {
   const diff = s.meta.diffMods;
   const playerMil = militaryPower(s, fx);
-  for (const id of AI_NATION_IDS) {
+  const aiIds = Object.keys(s.world.nations);
+  for (const id of aiIds) {
     const n = s.world.nations[id];
     if (!s.world.owners.includes(id)) continue; // 滅亡した国
-    const def = getNationDef(id);
+    const def = n;
     const atWar = s.world.wars.some((w) => w.attacker === id || w.defender === id || w.defenderAllies.includes(id));
     // 経済と軍事
     let g = def.baseGrowth + rng.normal() * 0.6 - (atWar ? 1.5 : 0) - (n.sanctionTurns > 0 ? 1 : 0);
-    if (id === 'zarkan') g += ((s.econ.oilPrice - 80) / 80) * 3;
+    if (n.resource) g += ((s.econ.oilPrice - 80) / 80) * 3;
     n.growth = approach(n.growth ?? g, g, 0.5);
     n.gdp = Math.max(10, n.gdp * (1 + n.growth / 1200));
     const milTarget = (n.gdp / 4) * def.aggression * 0.9 + 15;
@@ -251,11 +251,11 @@ function runAI(s, fx, rng) {
     }
 
     // 他国への感情の揺らぎ
-    for (const other of AI_NATION_IDS) {
+    for (const other of aiIds) {
       if (other <= id) continue;
       // 歴史的な対立関係（初期値）へゆっくり戻りつつ揺らぐ
       const key = opinionKey(id, other);
-      const rival = INITIAL_OPINIONS[key] ?? 50;
+      const rival = s.world.rivalry?.[key] ?? 50;
       setOpinion(s, id, other, approach(getOpinion(s, id, other), rival, 0.03) + rng.normal() * 2);
     }
 
@@ -396,7 +396,7 @@ export function performDiplomacy(s, action, targetId, rng) {
     case 'aid': {
       const cost = (s.econ.gdp * a.costPct) / 100;
       s.econ.treasury -= cost;
-      const g = Math.round(rng.range(10, 14) * eff * (targetId === 'ornea' ? 1.3 : 1));
+      const g = Math.round(rng.range(10, 14) * eff * (n.tradeAffinity >= 0.9 ? 1.3 : 1));
       rel(g);
       s.world.reputation = clamp(s.world.reputation + 1, 0, 100);
       addLog(s, `${n.name}へ${cost.toFixed(2)}兆の資金援助を行った（関係値+${g}）。`, 'action', 'diplomacy');

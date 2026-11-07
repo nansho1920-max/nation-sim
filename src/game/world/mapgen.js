@@ -7,7 +7,7 @@ import { NATIONS } from '../data/nations';
 
 export const MAP_W = 1000;
 export const MAP_H = 640;
-const WORLD_SEED = 0x5eed2026;
+export const DEFAULT_WORLD_SEED = 0x5eed2026;
 const COLS = 26;
 const ROWS = 17;
 const LAND_RATIO = 0.6;
@@ -62,8 +62,8 @@ function sharedEdge(polyA, polyB) {
   return common.length === 2 ? common : null;
 }
 
-function generate() {
-  const rng = makeRng(WORLD_SEED);
+function generate(seed, specs) {
+  const rng = makeRng(seed);
   const noiseA = makeNoise(rng, 5);
   const noiseB = makeNoise(rng, 13);
 
@@ -167,7 +167,7 @@ function generate() {
   }
   capitals.player = playerCap;
   const chosen = [playerCap];
-  for (const nation of NATIONS.filter((n) => n.id !== 'player')) {
+  for (const nation of specs.filter((n) => n.id !== 'player')) {
     const scored = provinces
       .filter((p) => !chosen.includes(p.id))
       .map((p) => ({ id: p.id, d: Math.min(...chosen.map((c) => dist(provPoint(p), provPoint(provinces[c])))) }))
@@ -180,7 +180,7 @@ function generate() {
   // 5. 領土の拡大（多始点ダイクストラ）
   const owner = new Array(provinces.length).fill(null);
   const cost = new Array(provinces.length).fill(Infinity);
-  const weightOf = Object.fromEntries(NATIONS.map((n) => [n.id, n.sizeWeight ?? 1]));
+  const weightOf = Object.fromEntries(specs.map((n) => [n.id, n.sizeWeight ?? 1]));
   const queue = [];
   for (const [nid, pid] of Object.entries(capitals)) {
     cost[pid] = 0;
@@ -232,8 +232,21 @@ function generate() {
   return { width: MAP_W, height: MAP_H, provinces, capitals, initialOwner: owner, edges, coastPath: coast.join('') };
 }
 
-let cached = null;
-export function getWorldMap() {
-  if (!cached) cached = generate();
-  return cached;
+export const DEFAULT_MAP_SPEC = NATIONS.map((n) => ({ id: n.id, sizeWeight: n.sizeWeight ?? 1 }));
+
+const cache = new Map();
+/**
+ * 地図を生成する（同じ引数なら同じ地図）。
+ * specs: [{ id, sizeWeight }]。先頭はプレイヤー（'player'）
+ */
+export function getWorldMap(seed = DEFAULT_WORLD_SEED, specs = DEFAULT_MAP_SPEC) {
+  const key = `${seed}|${specs.map((x) => `${x.id}:${x.sizeWeight}`).join(',')}`;
+  if (!cache.has(key)) {
+    if (cache.size > 6) cache.delete(cache.keys().next().value);
+    cache.set(key, generate(seed, specs));
+  }
+  return cache.get(key);
 }
+
+/** ゲーム状態に対応する地図 */
+export const mapOf = (s) => getWorldMap(s.meta.worldSeed ?? DEFAULT_WORLD_SEED, s.world.mapSpec ?? DEFAULT_MAP_SPEC);

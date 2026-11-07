@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, ReferenceLine } from 'recharts';
 import { Panel } from '../ui/kit';
-import { PARTIES } from '../../game/data/parties';
 import { POPS } from '../../game/data/pops';
 
 const GROUPS = [
@@ -11,7 +10,7 @@ const GROUPS = [
   { id: 'rates', label: '金利', series: [{ key: 'policyRate', label: '政策金利', color: '#d4a24c' }, { key: 'bondYield', label: '国債利回り', color: '#e05252' }], unit: '%' },
   { id: 'approval', label: '支持率', series: [{ key: 'approval', label: '支持率', color: '#4cb782' }], unit: '%', domain: [0, 100] },
   { id: 'pops', label: '人口集団', series: POPS.map((p, i) => ({ key: `pops.${p.id}`, label: p.name, color: ['#e07a5f', '#d4a24c', '#7d9a4a', '#4f9fd6', '#c77dff', '#e07a9a'][i] })), domain: [0, 100] },
-  { id: 'parties', label: '政党支持率', series: PARTIES.map((p) => ({ key: `support.${p.id}`, label: p.name, color: p.color })), unit: '%' },
+  { id: 'parties', label: '政党支持率', series: [], unit: '%' },
   { id: 'society', label: '社会指標', series: [{ key: 'education', label: '教育', color: '#4f9fd6' }, { key: 'health', label: '健康', color: '#e07a9a' }, { key: 'corruption', label: '汚職', color: '#c77dff' }, { key: 'tension', label: '緊張', color: '#e05252' }], domain: [0, 100] },
   { id: 'environment', label: '環境', series: [{ key: 'environment', label: '環境指数', color: '#3fae6a' }, { key: 'renewableShare', label: '再エネ比率', color: '#7cc3a0' }, { key: 'co2', label: 'CO₂', color: '#a0663c' }] },
   { id: 'population', label: '人口', series: [{ key: 'population', label: '人口（万人）', color: '#7cc3a0' }] },
@@ -21,7 +20,11 @@ const get = (o, path) => path.split('.').reduce((a, k) => a?.[k], o);
 
 export default function Stats({ state: s }) {
   const [group, setGroup] = useState('gdp');
-  const g = GROUPS.find((x) => x.id === group);
+  const base = GROUPS.find((x) => x.id === group);
+  const g = useMemo(
+    () => (base.id === 'parties' ? { ...base, series: s.parties.map((p) => ({ key: `support.${p.id}`, label: p.name, color: p.color })) } : base),
+    [base, s.parties],
+  );
   const data = useMemo(
     () =>
       s.history.map((h) => {

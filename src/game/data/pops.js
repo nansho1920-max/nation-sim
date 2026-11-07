@@ -12,15 +12,28 @@ export const POPS = [
 export const POP_IDS = POPS.map((p) => p.id);
 export const getPop = (id) => POPS.find((p) => p.id === id);
 
-// 各集団が平常時にどの政党を支持しやすいか（行の合計は1）
-export const POP_PARTY_PREF = {
-  workers: { conservative: 0.15, liberal: 0.08, socdem: 0.38, green: 0.08, nationalist: 0.21, reform: 0.1 },
-  capitalists: { conservative: 0.38, liberal: 0.4, socdem: 0.04, green: 0.04, nationalist: 0.06, reform: 0.08 },
-  farmers: { conservative: 0.45, liberal: 0.05, socdem: 0.12, green: 0.06, nationalist: 0.25, reform: 0.07 },
-  publicServants: { conservative: 0.3, liberal: 0.08, socdem: 0.32, green: 0.1, nationalist: 0.08, reform: 0.12 },
-  youth: { conservative: 0.08, liberal: 0.2, socdem: 0.17, green: 0.27, nationalist: 0.1, reform: 0.18 },
-  elderly: { conservative: 0.42, liberal: 0.07, socdem: 0.25, green: 0.05, nationalist: 0.15, reform: 0.06 },
+// 各集団が理想とする政策の位置。政党の位置が近いほど、その集団に支持されやすい。
+export const POP_IDEALS = {
+  workers: { econ: -0.5, social: 0.2, eco: -0.1, nation: 0.3, reform: 0.0 },
+  capitalists: { econ: 0.8, social: 0.4, eco: -0.3, nation: 0.1, reform: 0.1 },
+  farmers: { econ: 0.1, social: 0.8, eco: 0.0, nation: 0.4, reform: -0.3 },
+  publicServants: { econ: -0.3, social: 0.3, eco: 0.1, nation: 0.1, reform: -0.3 },
+  youth: { econ: 0.0, social: -0.5, eco: 0.55, nation: -0.3, reform: 0.3 },
+  elderly: { econ: -0.25, social: 0.5, eco: -0.1, nation: 0.1, reform: -0.2 },
 };
+
+const PREF_SHARPNESS = 1.5;
+
+/** 政党の一覧から、各集団の支持の向き（集団ごとに合計1）を計算する */
+export function popPreferences(parties, axisDistance) {
+  const out = {};
+  for (const pop of POPS) {
+    const w = parties.map((p) => Math.exp(-PREF_SHARPNESS * axisDistance(POP_IDEALS[pop.id], p.axes)));
+    const total = w.reduce((a, b) => a + b, 0);
+    out[pop.id] = Object.fromEntries(parties.map((p, i) => [p.id, w[i] / total]));
+  }
+  return out;
+}
 
 // 投票率
 export const POP_TURNOUT = { workers: 0.55, capitalists: 0.8, farmers: 0.65, publicServants: 0.75, youth: 0.4, elderly: 0.8 };

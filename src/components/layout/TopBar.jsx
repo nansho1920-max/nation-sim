@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { CircleHelp, Crown, Pause, Play, RotateCcw, Zap } from 'lucide-react';
 import { SPEEDS, CAPITAL_MAX } from '../../game/data/balance';
-import { getParty } from '../../game/data/parties';
+import { partyOf } from '../../game/engine/parties';
 import { formatDate } from '../../game/core/calendar';
 import { fmtTrillion } from '../../game/core/format';
 import { useCountUp } from '../../hooks/useCountUp';
@@ -18,7 +18,7 @@ function Stat({ label, value, sub, tone = 'text-ink', title }) {
 }
 
 function TopBar({ state, derived, clock, onHelp, onReset }) {
-  const party = getParty(state.meta.partyId);
+  const party = partyOf(state, state.meta.partyId);
   const gdp = useCountUp(state.econ.gdp);
   const treasury = useCountUp(state.econ.treasury);
   const appr = useCountUp(derived.approval);

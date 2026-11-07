@@ -2,7 +2,7 @@
 
 export const SAVE_KEY = 'nation-sim-save-v2';
 export const LEGACY_SAVE_KEYS = ['nation-sim-save-v1'];
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export const START_DATE = { y: 2026, m: 4, d: 1 };
 export const TERM_MONTHS = 120; // 10年の任期

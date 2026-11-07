@@ -1,5 +1,6 @@
 // 法律。議会で可決されると effects がゲームの各システムに反映される。
-// stance: 各政党の賛否 (-2 強く反対 〜 +2 強く賛成)
+// dir: 法案が政策軸をどちらへ動かすか。各政党の賛否 (-2〜+2) は政党の位置との内積から計算される
+// bias: 全政党に共通する賛成（+）・反対（−）の傾き
 // group: 同じグループの法律は同時に成立しない（新しい方が古い方を置き換える）
 // constitutional: 憲法改正（3分の2の賛成が必要）
 
@@ -22,7 +23,7 @@ export const LAWS = [
     cost: 20,
     desc: '労働者の生活を底上げするが、企業の雇用意欲を削ぐ。',
     effects: { popTarget: { workers: 8, capitalists: -6, youth: 2 }, naturalUnemp: 0.6, giniTarget: -0.02 },
-    stance: { conservative: 0, liberal: -2, socdem: 2, green: 1, nationalist: 1, reform: 0 },
+    dir: { econ: -1 },
   },
   {
     id: 'labor_dereg',
@@ -32,7 +33,7 @@ export const LAWS = [
     cost: 20,
     desc: '解雇規制を緩め雇用を流動化する。成長と雇用は増えるが格差が広がる。',
     effects: { popTarget: { workers: -8, capitalists: 7, youth: 2 }, naturalUnemp: -0.6, potential: 0.3, giniTarget: 0.025 },
-    stance: { conservative: 1, liberal: 2, socdem: -2, green: -1, nationalist: -1, reform: 1 },
+    dir: { econ: 1, reform: 0.2 },
   },
   {
     id: 'farm_subsidy',
@@ -41,7 +42,7 @@ export const LAWS = [
     cost: 15,
     desc: '農家の所得を国が補償する。農村票は固まるが財政負担が増える。',
     effects: { popTarget: { farmers: 12 }, spendingPct: 0.3 },
-    stance: { conservative: 2, liberal: -2, socdem: 1, green: 0, nationalist: 1, reform: -1 },
+    dir: { econ: -0.4, social: 0.5, nation: 0.5, reform: -0.3 },
   },
   {
     id: 'free_trade',
@@ -50,7 +51,7 @@ export const LAWS = [
     cost: 20,
     desc: '関税を撤廃し貿易協定の効果を1.5倍にする。輸入品との競争で農家が打撃を受ける。',
     effects: { popTarget: { farmers: -9, capitalists: 6, workers: -2 }, tradeMult: 0.5, potential: 0.2 },
-    stance: { conservative: 0, liberal: 2, socdem: 0, green: 0, nationalist: -2, reform: 1 },
+    dir: { econ: 0.6, nation: -1 },
   },
   {
     id: 'carbon_tax',
@@ -59,7 +60,7 @@ export const LAWS = [
     cost: 25,
     desc: 'CO₂排出に課税する。税収と環境は改善するが、産業界と物価に負担。',
     effects: { revenuePct: 0.4, co2Mult: 0.85, growth: -0.2, inflation: 0.3, popTarget: { capitalists: -5, youth: 5, farmers: -2 } },
-    stance: { conservative: -1, liberal: -1, socdem: 1, green: 2, nationalist: -1, reform: 0 },
+    dir: { eco: 1, econ: -0.3 },
   },
   {
     id: 'renewable_act',
@@ -68,7 +69,7 @@ export const LAWS = [
     cost: 20,
     desc: '再エネへの補助を拡充し、毎月再エネ発電容量が自然に増える。',
     effects: { spendingPct: 0.4, renewableGrowth: 0.6, popTarget: { youth: 4 } },
-    stance: { conservative: -1, liberal: 0, socdem: 1, green: 2, nationalist: 0, reform: 1 },
+    dir: { eco: 1 }, bias: 0.1,
   },
   {
     id: 'nuclear',
@@ -77,7 +78,7 @@ export const LAWS = [
     cost: 25,
     desc: '原子力発電所の新設を解禁する。緑の党は猛反発。',
     effects: { nuclearAllowed: true, popTarget: { youth: -3 } },
-    stance: { conservative: 1, liberal: 1, socdem: -1, green: -2, nationalist: 1, reform: 0 },
+    dir: { eco: -0.9, nation: 0.4, econ: 0.2 },
   },
   {
     id: 'universal_health',
@@ -86,7 +87,7 @@ export const LAWS = [
     cost: 25,
     desc: '医療費の自己負担を引き下げる。健康水準は上がるが財政を圧迫する。',
     effects: { spendingPct: 1.0, healthTarget: 8, popTarget: { elderly: 8, workers: 4 } },
-    stance: { conservative: 0, liberal: -1, socdem: 2, green: 1, nationalist: 1, reform: 0 },
+    dir: { econ: -1 }, bias: 0.2,
   },
   {
     id: 'pension_reform',
@@ -95,7 +96,7 @@ export const LAWS = [
     cost: 30,
     desc: '社会保障費を大きく削減できるが、高齢者は激怒する。',
     effects: { spendingPct: -0.9, popTarget: { elderly: -15, youth: 3 } },
-    stance: { conservative: 1, liberal: 2, socdem: -2, green: 0, nationalist: -1, reform: 1 },
+    dir: { econ: 0.8, reform: 0.4, social: -0.3 },
   },
   {
     id: 'child_support',
@@ -104,7 +105,7 @@ export const LAWS = [
     cost: 20,
     desc: '児童手当と保育を拡充し、出生率を押し上げる。',
     effects: { spendingPct: 0.5, birthRate: 1.6, popTarget: { youth: 6, workers: 3 } },
-    stance: { conservative: 1, liberal: 0, socdem: 2, green: 1, nationalist: 1, reform: 1 },
+    dir: { econ: -0.4, social: 0.3, eco: 0.2 }, bias: 0.5,
   },
   {
     id: 'basic_income',
@@ -114,7 +115,7 @@ export const LAWS = [
     requiresTech: 'ubi_research',
     desc: '全国民に最低所得を保障する。格差は劇的に縮むが巨額の財源が必要。',
     effects: { spendingPct: 3.0, giniTarget: -0.06, naturalUnemp: 0.5, popTarget: { workers: 12, youth: 10, elderly: 4, capitalists: -10 } },
-    stance: { conservative: -2, liberal: -1, socdem: 2, green: 2, nationalist: -1, reform: 1 },
+    dir: { econ: -1, reform: 0.4, social: -0.4 },
   },
   {
     id: 'anti_corruption',
@@ -123,7 +124,7 @@ export const LAWS = [
     cost: 20,
     desc: '独立した監察機関を設置し、汚職を毎月減らしていく。',
     effects: { corruptionTrend: -0.9, popTarget: { publicServants: -4 } },
-    stance: { conservative: -1, liberal: 1, socdem: 1, green: 1, nationalist: 0, reform: 2 },
+    dir: { reform: 1 }, bias: 0.15,
   },
   {
     id: 'press_control',
@@ -132,7 +133,7 @@ export const LAWS = [
     cost: 25,
     desc: '政府批判の報道を規制する。社会の緊張は和らぐが、汚職が増え国際評価が下がる。',
     effects: { tensionTarget: -12, corruptionTrend: 0.5, reputationTrend: -0.4, popTarget: { youth: -8, publicServants: 3 } },
-    stance: { conservative: 0, liberal: -2, socdem: -2, green: -2, nationalist: 1, reform: -2 },
+    dir: { social: 0.6, nation: 0.6, reform: -1 }, bias: -0.4,
   },
   {
     id: 'conscription',
@@ -141,7 +142,7 @@ export const LAWS = [
     cost: 25,
     desc: '軍事力の上限を大きく引き上げる。若者の反発は必至。',
     effects: { militaryTarget: 15, naturalUnemp: -0.4, popTarget: { youth: -12, elderly: 2 } },
-    stance: { conservative: 1, liberal: -1, socdem: -1, green: -2, nationalist: 2, reform: -1 },
+    dir: { nation: 1, social: 0.5, eco: -0.3 },
   },
   {
     id: 'isolation',
@@ -150,7 +151,7 @@ export const LAWS = [
     cost: 20,
     desc: '国境と港を封鎖する。貿易協定は停止し成長は鈍るが、他国の干渉と宣戦布告を防ぎやすくなる。',
     effects: { isolation: true, growth: -1.0, tensionTarget: -4, popTarget: { farmers: 4, capitalists: -10, workers: 2 } },
-    stance: { conservative: 0, liberal: -2, socdem: -1, green: 0, nationalist: 2, reform: -1 },
+    dir: { nation: 1, econ: -0.4 }, bias: -0.2,
   },
   {
     id: 'planned_economy',
@@ -160,7 +161,7 @@ export const LAWS = [
     cost: 50,
     desc: '国家が生産と価格を管理する。景気変動と不況イベントを無効化するが、成長は鈍り市場経済国との関係が悪化し続ける。',
     effects: { planned: true, growth: -0.6, giniTarget: -0.07, popTarget: { capitalists: -25, workers: 8, publicServants: 6 } },
-    stance: { conservative: -2, liberal: -2, socdem: 1, green: 0, nationalist: 0, reform: -2 },
+    dir: { econ: -1.2, reform: -0.5, nation: 0.3 }, bias: -0.3,
   },
   {
     id: 'emergency_powers',
@@ -170,7 +171,7 @@ export const LAWS = [
     cost: 50,
     desc: '危機時に行政権を強化する。政治資本の獲得量が増えるが、汚職と国民の警戒も増す。',
     effects: { capitalGain: 3, corruptionTrend: 0.4, tensionTarget: 5, popTarget: { youth: -5 } },
-    stance: { conservative: 1, liberal: -1, socdem: -2, green: -2, nationalist: 2, reform: -1 },
+    dir: { nation: 0.8, reform: -0.8, social: 0.4 },
   },
 ];
 

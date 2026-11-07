@@ -1,7 +1,8 @@
 import { memo, useMemo, useState } from 'react';
 import { Briefcase, Check, Gavel, Landmark, Scale, Star, UserPlus, UserMinus, Vote } from 'lucide-react';
 import { Panel, Button, Chip, Bar, Sparkline, Tabs } from '../ui/kit';
-import { PARTIES, compatibility, getParty } from '../../game/data/parties';
+import { compat as compatOf, partyOf, seatOrder, stanceOf } from '../../game/engine/parties';
+import { ideologyLabel } from '../../game/data/parties';
 import { LAWS, LAW_CATEGORIES } from '../../game/data/laws';
 import { MINISTRIES, competenceToEff } from '../../game/data/cabinet';
 import { MAJORITY, SUPERMAJORITY } from '../../game/data/balance';
@@ -9,8 +10,6 @@ import { canInvite, canProposeLaw, getPromise, lawCost, nextElectionLabel, predi
 import { getTech } from '../../game/data/techs';
 import { formatYM } from '../../game/core/calendar';
 
-// 議席を左（左派）から右（右派）へ並べる順序
-const SEAT_ORDER = ['socdem', 'green', 'reform', 'liberal', 'conservative', 'nationalist'];
 
 function hemicyclePositions(total, rows = 9) {
   const radii = Array.from({ length: rows }, (_, i) => 0.38 + (0.62 * i) / (rows - 1));
@@ -29,14 +28,14 @@ function hemicyclePositions(total, rows = 9) {
 }
 const POSITIONS = hemicyclePositions(300);
 
-const Parliament = memo(function Parliament({ seats, coalition }) {
+const Parliament = memo(function Parliament({ seats, coalition, order, parties }) {
   const colors = [];
-  for (const pid of SEAT_ORDER) for (let i = 0; i < (seats[pid] ?? 0); i++) colors.push(pid);
+  for (const pid of order) for (let i = 0; i < (seats[pid] ?? 0); i++) colors.push(pid);
   return (
     <svg viewBox="-1.05 -1.05 2.1 1.12" className="w-full" role="img" aria-label="議会の議席配置">
       {POSITIONS.map((p, i) => {
         const pid = colors[i];
-        const party = getParty(pid);
+        const party = parties.find((p) => p.id === pid);
         return <circle key={i} cx={p.x} cy={-p.y} r={0.026} fill={party?.color ?? '#333'} opacity={coalition.includes(pid) ? 1 : 0.38} />;
       })}
       <line x1={0} y1={-1.03} x2={0} y2={0.02} stroke="#ecc77e" strokeWidth="0.006" strokeDasharray="0.02 0.02" opacity="0.6" />
@@ -61,7 +60,7 @@ function ParliamentTab({ s, d, dispatch }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
       <Panel title="議会（定数300）" icon={Landmark}>
-        <Parliament seats={pol.seats} coalition={pol.coalition} />
+        <Parliament seats={pol.seats} coalition={pol.coalition} order={seatOrder(s)} parties={s.parties} />
         <div className="mt-1 text-center">
           <span className="num text-3xl font-bold text-brass-light">{d.coalitionSeats}</span>
           <span className="text-ink-dim"> / 300 議席（与党連合）</span>
@@ -97,7 +96,7 @@ function ParliamentTab({ s, d, dispatch }) {
         {last && (
           <p className="mt-3 text-[12px] text-ink-dim">
             前回の総選挙（{formatYM(last.date)}）：
-            {PARTIES.filter((p) => last.seats[p.id] > 0)
+            {s.parties.filter((p) => last.seats[p.id] > 0)
               .map((p) => `${p.short}${last.seats[p.id]}`)
               .join('・')}
           </p>
@@ -106,13 +105,13 @@ function ParliamentTab({ s, d, dispatch }) {
 
       <Panel title="政党と連立" icon={Vote} bodyClass="p-0">
         <ul className="divide-y divide-line">
-          {[...PARTIES]
+          {[...s.parties]
             .sort((a, b) => pol.seats[b.id] - pol.seats[a.id])
             .map((p) => {
               const inCoalition = pol.coalition.includes(p.id);
               const isPlayer = p.id === player;
               const inv = canInvite(s, p.id);
-              const compat = compatibility(player, p.id);
+              const compat = compatOf(s, player, p.id);
               return (
                 <li key={p.id} className="grid grid-cols-[1fr_auto] gap-2 px-4 py-3">
                   <div className="min-w-0">
@@ -122,7 +121,7 @@ function ParliamentTab({ s, d, dispatch }) {
                       {isPlayer && <Chip tone="brass">与党第一党</Chip>}
                       {inCoalition && !isPlayer && <Chip tone="good">連立</Chip>}
                     </div>
-                    <div className="text-[11px] text-ink-faint">{p.ideology}</div>
+                    <div className="text-[11px] text-ink-faint">{ideologyLabel(p.axes)}</div>
                     <div className="mt-1 grid grid-cols-[1fr_5rem] items-center gap-2">
                       <Sparkline data={hist.map((h) => h.support[p.id])} color={p.color} height={20} />
                       <div className="text-right">
@@ -201,9 +200,9 @@ function LawsTab({ s, dispatch }) {
               <p className="mt-1 text-[13px] leading-relaxed text-ink-dim">{law.desc}</p>
               {techMissing && <p className="mt-1 text-[11px] text-amber-300">技術「{getTech(law.requiresTech).name}」の研究が必要</p>}
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-ink-dim">
-                {PARTIES.map((p) => (
+                {s.parties.map((p) => (
                   <span key={p.id} className="flex items-center gap-1">
-                    <StanceDot stance={law.stance[p.id] * (active ? -1 : 1)} />
+                    <StanceDot stance={stanceOf(s, law, p.id) * (active ? -1 : 1)} />
                     {p.short}
                   </span>
                 ))}
@@ -257,7 +256,7 @@ function CabinetTab({ s, dispatch }) {
                 <div className="min-w-0 flex-1">
                   <div className="font-bold">{cur.name}</div>
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-dim">
-                    <span style={{ color: getParty(cur.party).color }}>{getParty(cur.party).short}</span>
+                    <span style={{ color: partyOf(s, cur.party)?.color }}>{partyOf(s, cur.party)?.short}</span>
                     能力 <Stars n={cur.competence} label="能力" />
                     清廉 <Stars n={cur.integrity} label="清廉さ" />
                   </div>
@@ -276,8 +275,8 @@ function CabinetTab({ s, dispatch }) {
                   <div key={c.id} className="flex items-center gap-2 text-[12px]">
                     <span className="min-w-0 flex-1 truncate">
                       {c.name}
-                      <span className="ml-1" style={{ color: getParty(c.party).color }}>
-                        ({getParty(c.party).short})
+                      <span className="ml-1" style={{ color: partyOf(s, c.party)?.color }}>
+                        ({partyOf(s, c.party)?.short})
                       </span>
                     </span>
                     <Stars n={c.competence} label="能力" />
