@@ -3,4 +3,6 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  // 相対パスで出力し、GitHub Pages（/nation-sim/ 配下）でもそのまま動くようにする
+  base: './',
 });

@@ -2,7 +2,11 @@
 
 React + Tailwind CSS + Lucide React で作ったターン制の政治・国家運営シミュレーション。
 
-## 起動
+## 遊ぶ
+
+ブラウザで https://nansho1920-max.github.io/nation-sim/ を開くとすぐ遊べます。
+
+## ローカルで起動
 
 ```bash
 npm install
@@ -27,3 +31,7 @@ src/
   components/             Header / LogPanel / DomesticPanel / DiplomacyPanel /
                           StatusPanel / EventModal / GameOverScreen / EndTurnButton / ConfirmDialog
 ```
+
+## デプロイ
+`main` に push すると GitHub Actions（`.github/workflows/deploy.yml`）がビルドして GitHub Pages に公開します。
+初回のみ、リポジトリの Settings → Pages → Source を「GitHub Actions」にしてください。
