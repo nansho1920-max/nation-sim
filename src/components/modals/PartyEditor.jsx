@@ -5,7 +5,7 @@ import { estimateSupport, partyDifficulty } from '../../game/engine/parties';
 import { Button } from '../ui/kit';
 
 /** 政党を作る・編集するフォーム */
-export default function PartyEditor({ initial, others, onSave, onCancel }) {
+export default function PartyEditor({ initial, others, onSave, onCancel, saveLabel = '保存', extra, saveDisabled = false }) {
   const [draft, setDraft] = useState(() => makeParty(initial));
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const setAxis = (id, v) => setDraft((d) => ({ ...d, axes: { ...d.axes, [id]: v } }));
@@ -116,14 +116,16 @@ export default function PartyEditor({ initial, others, onSave, onCancel }) {
         </div>
       </div>
 
+      {extra?.(draft)}
+
       <div className="mt-3 flex justify-end gap-2">
         <Button onClick={onCancel}>
           <X className="h-4 w-4" />
           キャンセル
         </Button>
-        <Button variant="primary" disabled={!draft.name.trim()} onClick={() => onSave(makeParty({ ...draft, short: draft.short.trim() || draft.name.slice(0, 2) }))}>
+        <Button variant="primary" disabled={!draft.name.trim() || saveDisabled} onClick={() => onSave(makeParty({ ...draft, short: draft.short.trim() || draft.name.slice(0, 2) }))}>
           <Check className="h-4 w-4" />
-          保存
+          {saveLabel}
         </Button>
       </div>
     </div>

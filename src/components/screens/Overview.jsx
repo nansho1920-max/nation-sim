@@ -1,4 +1,6 @@
-import { AlertTriangle, Bell, Building2, Coins, Info, Newspaper, PieChart, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import RenameDialog from '../modals/RenameDialog';
+import { Pencil, AlertTriangle, Bell, Building2, Coins, Info, Newspaper, PieChart, Sparkles } from 'lucide-react';
 import { Panel, Sparkline, Delta, Bar, Chip } from '../ui/kit';
 import { fmtPopulation, fmtTrillion } from '../../game/core/format';
 import { formatYM } from '../../game/core/calendar';
@@ -26,7 +28,8 @@ function Kpi({ label, value, delta, digits = 1, unit = '', invert, series, color
 
 const LEVEL = { bad: 'border-red-800/60 bg-red-950/40 text-red-200', warn: 'border-amber-700/50 bg-amber-950/30 text-amber-100', info: 'border-sky-800/50 bg-sky-950/30 text-sky-100' };
 
-export default function Overview({ state: s, derived: d, go }) {
+export default function Overview({ state: s, derived: d, go, dispatch }) {
+  const [renaming, setRenaming] = useState(false);
   const h = s.history.slice(-24);
   const prev = s.history.at(-2) ?? s.history.at(-1);
   const series = (k) => h.map((x) => x[k]);
@@ -38,7 +41,23 @@ export default function Overview({ state: s, derived: d, go }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <div className="label">{s.meta.countryName} 統計局</div>
+          <div className="flex items-center gap-1">
+            <span className="label">{s.meta.countryName} 統計局</span>
+            <button onClick={() => setRenaming(true)} className="btn h-6 w-6 text-ink-faint hover:bg-raised hover:text-ink" aria-label="国名を変更" title="国名を変更">
+              <Pencil className="h-3 w-3" />
+            </button>
+          </div>
+          {renaming && (
+            <RenameDialog
+              title="自国の国名を変更"
+              name={s.meta.countryName}
+              onCancel={() => setRenaming(false)}
+              onSave={({ name }) => {
+                dispatch({ type: 'RENAME', kind: 'country', name });
+                setRenaming(false);
+              }}
+            />
+          )}
           <h1 className="font-serif text-2xl font-bold tracking-wider text-ink">国家概要 — {formatYM(s.date)}</h1>
         </div>
         <div className="flex flex-wrap gap-1.5">

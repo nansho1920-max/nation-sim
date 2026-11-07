@@ -244,3 +244,61 @@ describe('ランダムシナリオ', () => {
     });
   }
 });
+
+describe('ゲーム途中の新党結成と改名', () => {
+  const draft = { name: '新時代党', short: '新時', color: '#ff8800', axes: { econ: 0.5, social: 0.5, eco: 0, nation: 0.3, reform: 0.2 } };
+  it('自分が新党を率いると与党が入れ替わり、議員が移籍し、議席合計は変わらない', () => {
+    let s = play(newGame(), 60);
+    s = structuredClone(s);
+    s.politics.capital = 100;
+    const oldSeats = s.politics.seats.conservative;
+    const out = R(s, { type: 'FOUND_PARTY', party: draft, lead: true });
+    const id = out.meta.partyId;
+    expect(id).not.toBe('conservative');
+    expect(out.parties.find((p) => p.id === id).name).toBe('新時代党');
+    expect(out.politics.seats[id]).toBeGreaterThan(0);
+    expect(out.politics.seats[id] + out.politics.seats.conservative).toBe(oldSeats);
+    expect(Object.values(out.politics.seats).reduce((a, b) => a + b, 0)).toBe(300);
+    expect(out.politics.coalition[0]).toBe(id);
+    expect(out.politics.capital).toBe(60);
+    const later = play(out, 2000, 1);
+    expect(findNonFinite(later)).toBeNull();
+    expect(later.politics.support[id]).toBeGreaterThan(0);
+  });
+  it('野党の新党は議席ゼロで誕生し、選挙で議席を得られる', () => {
+    let s = structuredClone(newGame());
+    s.politics.capital = 100;
+    s = R(s, { type: 'FOUND_PARTY', party: { ...draft, axes: { econ: -0.5, social: -0.5, eco: 0.8, nation: -0.5, reform: 0.9 } }, lead: false });
+    const created = s.parties.at(-1).id;
+    expect(s.meta.partyId).toBe('conservative');
+    expect(s.politics.seats[created]).toBe(0);
+    s = structuredClone(s);
+    s.politics.nextElection = s.month + 1;
+    s = play(s, 40);
+    expect(s.politics.elections.length).toBeGreaterThan(0);
+    expect(Object.keys(s.politics.elections.at(-1).seats)).toContain(created);
+  });
+  it('政党は最大8つまで、政治資本が足りなければ結成できない', () => {
+    let s = structuredClone(newGame());
+    s.politics.capital = 5;
+    expect(R(s, { type: 'FOUND_PARTY', party: draft, lead: false }).parties.length).toBe(6);
+    s.politics.capital = 100;
+    s = R(s, { type: 'FOUND_PARTY', party: draft, lead: false });
+    s = structuredClone(s);
+    s.politics.capital = 100;
+    s = R(s, { type: 'FOUND_PARTY', party: { ...draft, name: '別の党' }, lead: false });
+    s = structuredClone(s);
+    s.politics.capital = 100;
+    expect(R(s, { type: 'FOUND_PARTY', party: { ...draft, name: '九番目' }, lead: false }).parties.length).toBe(8);
+  });
+  it('国名・外国名・政党名を自由に変えられる', () => {
+    let s = newGame();
+    s = R(s, { type: 'RENAME', kind: 'country', name: '大和帝国' });
+    s = R(s, { type: 'RENAME', kind: 'nation', id: 'valdoria', name: '北方連邦' });
+    s = R(s, { type: 'RENAME', kind: 'party', id: 'liberal', name: '市場第一党', short: '市場' });
+    expect(s.meta.countryName).toBe('大和帝国');
+    expect(s.world.nations.valdoria.name).toBe('北方連邦');
+    expect(s.parties.find((p) => p.id === 'liberal')).toMatchObject({ name: '市場第一党', short: '市場' });
+    expect(R(s, { type: 'RENAME', kind: 'country', name: '   ' }).meta.countryName).toBe('大和帝国');
+  });
+});

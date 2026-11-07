@@ -1,7 +1,7 @@
 // 政治：政党支持率・選挙・連立・法律・内閣
 import { approach, clamp, sum } from '../core/math';
 import { CAPITAL_MAX, ELECTION_INTERVAL, MAJORITY, PARLIAMENT_SEATS, SUPERMAJORITY } from '../data/balance';
-import { COALITION_MIN_COMPAT } from '../data/parties';
+import { COALITION_MIN_COMPAT, MAX_PARTIES, ideologyLabel, makeParty, partyCompatibility } from '../data/parties';
 import { POPS, POP_TURNOUT } from '../data/pops';
 import { compat, partyIds, partyOf, popPref, stanceOf } from './parties';
 import { LAWS, getLaw } from '../data/laws';
@@ -336,4 +336,90 @@ export function canInvite(s, partyId) {
 
 export function nextElectionLabel(s) {
   return formatYM(monthToYM(s.meta.startDate, s.politics.nextElection));
+}
+
+// ---------- 新党結成 ----------
+
+export const FOUND_COST = { lead: 40, opposition: 10 };
+
+export function canFoundParty(s, lead) {
+  if (s.parties.length >= MAX_PARTIES) return { ok: false, reason: `政党は最大${MAX_PARTIES}つまで` };
+  const cost = lead ? FOUND_COST.lead : FOUND_COST.opposition;
+  if (s.politics.capital < cost) return { ok: false, reason: `政治資本が不足（${cost}必要）` };
+  return { ok: true };
+}
+
+/**
+ * 新党を見積もる：自分が率いる場合に元の党から何人がついてくるか。
+ * 元の党と政策が近いほど多くの議員が移籍する。
+ */
+export function previewFounding(s, input) {
+  const player = s.meta.partyId;
+  const draft = makeParty({ ...input, id: '__draft' });
+  const c = partyCompatibility(draft, partyOf(s, player));
+  const defectRate = clamp(0.15 + c * 0.75, 0.15, 0.85);
+  const defectors = Math.round((s.politics.seats[player] ?? 0) * defectRate);
+  return { compat: c, defectRate, defectors, oldStaysInCoalition: c >= COALITION_MIN_COMPAT };
+}
+
+function newPartyId(s) {
+  let i = 1;
+  while (s.parties.some((p) => p.id === `new${i}`)) i += 1;
+  return `new${i}`;
+}
+
+/** 新党を結成する。lead=true なら首相が新党を率い、与党が入れ替わる */
+export function foundParty(s, input, lead, fx) {
+  if (!canFoundParty(s, lead).ok) return null;
+  const pol = s.politics;
+  const oldId = s.meta.partyId;
+  const oldParty = partyOf(s, oldId);
+  const preview = lead ? previewFounding(s, input) : null;
+  const party = makeParty({ ...input, id: newPartyId(s) });
+  s.parties = [...s.parties, party];
+  pol.capital -= lead ? FOUND_COST.lead : FOUND_COST.opposition;
+
+  // 支持率：新党は本来の支持の半分程度から始まり、月ごとに本来の水準へ近づいていく
+  const target = supportTarget(s, fx);
+  const initial = { ...pol.support, [party.id]: (target[party.id] ?? 3) * 0.5 };
+  if (lead) {
+    // 首相の個人人気で、元の党の支持の一部も新党へ移る
+    const moved = (pol.support[oldId] ?? 0) * preview.defectRate * 0.6;
+    initial[oldId] = (initial[oldId] ?? 0) - moved;
+    initial[party.id] += moved;
+  }
+  pol.support = normalizeSupport(initial);
+  pol.seats = { ...pol.seats, [party.id]: 0 };
+
+  if (lead) {
+    pol.seats[party.id] = preview.defectors;
+    pol.seats[oldId] -= preview.defectors;
+    s.meta.partyId = party.id;
+    pol.coalition = [party.id, ...pol.coalition.filter((p) => p !== oldId && compat(s, party.id, p) >= 0.25)];
+    if (preview.oldStaysInCoalition && pol.seats[oldId] > 0) pol.coalition.push(oldId);
+    pol.fatigue = Math.max(0, (pol.fatigue ?? 0) - 3); // 新党ブームで国民の目先が変わる
+    addLog(
+      s,
+      `首相が${oldParty.name}を離党し、新党「${party.name}」を結成した。${preview.defectors}人の議員が合流。${
+        preview.oldStaysInCoalition ? `${oldParty.name}は連立与党として政権を支える。` : `${oldParty.name}は野党に転じた。`
+      }`,
+      'politics',
+      'politics',
+    );
+    addNews(s, '政治', `首相が新党「${party.name}」を旗揚げ。${preview.defectors}人が参加`);
+  } else {
+    addLog(s, `新党「${party.name}」が結成された（${ideologyLabel(party.axes)}）。議席はまだないが、次の総選挙で議席を争う。`, 'politics', 'politics');
+    addNews(s, '政治', `新党「${party.name}」が結成。「${ideologyLabel(party.axes)}」を掲げる`);
+  }
+  return party.id;
+}
+
+// ---------- 名前の変更 ----------
+
+export function renameParty(s, id, { name, short, color }) {
+  const p = partyOf(s, id);
+  if (!p || !name?.trim()) return;
+  const old = p.name;
+  s.parties = s.parties.map((x) => (x.id === id ? makeParty({ ...x, name: name.trim(), short: short?.trim() || name.trim().slice(0, 2), color: color ?? x.color }) : x));
+  if (old !== name.trim()) addLog(s, `${old}が党名を「${name.trim()}」に改めた。`, 'politics', 'politics');
 }

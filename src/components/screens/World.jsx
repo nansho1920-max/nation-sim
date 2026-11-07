@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Flag, Globe2, Handshake, Landmark, Shield, Swords, Trophy } from 'lucide-react';
+import { Flag, Globe2, Handshake, Landmark, Shield, Swords, Trophy, Pencil } from 'lucide-react';
+import RenameDialog from '../modals/RenameDialog';
 import { Panel, Button, Chip, Bar, KV } from '../ui/kit';
 import WorldMap, { MAP_MODES, MapLegend } from '../world/WorldMap';
 import { ORGS } from '../../game/data/orgs';
@@ -17,11 +18,34 @@ function relationLabel(v) {
   return '盟友';
 }
 
+function RenameButton({ label, onClick }) {
+  return (
+    <button onClick={onClick} className="btn h-7 gap-1 rounded-md px-2 text-[11px] text-ink-dim hover:bg-raised hover:text-ink" aria-label={label} title={label}>
+      <Pencil className="h-3 w-3" />
+      改名
+    </button>
+  );
+}
+
 function NationPanel({ s, d, id, dispatch }) {
   const [confirmWar, setConfirmWar] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const renameDialog = (kind, current) =>
+    renaming && (
+      <RenameDialog
+        title={kind === 'country' ? '自国の国名を変更' : `${current}の国名を変更`}
+        name={current}
+        onCancel={() => setRenaming(false)}
+        onSave={({ name }) => {
+          dispatch({ type: 'RENAME', kind, id, name });
+          setRenaming(false);
+        }}
+      />
+    );
   if (id === 'player') {
     return (
-      <Panel title={s.meta.countryName} icon={Flag}>
+      <Panel title={s.meta.countryName} icon={Flag} actions={<RenameButton label="国名を変更" onClick={() => setRenaming(true)} />}>
+        {renameDialog('country', s.meta.countryName)}
         <dl>
           <KV label="政体">議会制民主主義</KV>
           <KV label="経済体制">{d.fx.planned ? '計画経済' : '市場経済'}</KV>
@@ -45,7 +69,17 @@ function NationPanel({ s, d, id, dispatch }) {
   const actions = ['envoy', 'aid', s.world.trade[id] ? 'cancelTrade' : 'trade', allied ? 'breakAlliance' : 'alliance', 'sanction'];
 
   return (
-    <Panel title={n.name} icon={Flag} actions={<span className="h-3 w-3 rounded-sm" style={{ background: n.color }} />}>
+    <Panel
+      title={n.name}
+      icon={Flag}
+      actions={
+        <span className="flex items-center gap-1.5">
+          <RenameButton label={`${n.name}の国名を変更`} onClick={() => setRenaming(true)} />
+          <span className="h-3 w-3 rounded-sm" style={{ background: n.color }} />
+        </span>
+      }
+    >
+      {renameDialog('nation', n.name)}
       <p className="text-[12px] leading-relaxed text-ink-dim">{def.desc}</p>
       {!alive && <p className="mt-2 text-sm text-red-300">この国は滅亡した。</p>}
       <div className="mt-3">

@@ -12,7 +12,7 @@ import { addLog, addModifier, applyEffects, ensureLiquidity } from './effects';
 import { aggregateEffects, approval, debtRatio } from './derived';
 import { runEconomy, runEnergy, runFiscal } from './economy';
 import { runPops, runSociety } from './society';
-import { canInvite, proposeLaw, runPolitics } from './politics';
+import { canInvite, foundParty, proposeLaw, renameParty, runPolitics } from './politics';
 import { checkOrgMembership, joinOrg, leaveOrg, performDiplomacy, proposePeace, runDiplomacy } from './diplomacy';
 import { dueScheduled, fireEvent, fireScheduled, monthlyTriggers, pickDailyEvent, resolveEvent } from './events';
 import { runTech, techAvailable } from './tech';
@@ -232,6 +232,22 @@ export function gameReducer(state, action) {
         s.politics.coalition = s.politics.coalition.filter((p) => p !== action.partyId);
         for (const [k, m] of Object.entries(s.politics.ministers)) if (m.party === action.partyId) delete s.politics.ministers[k];
         addLog(s, `${partyOf(s, action.partyId).name}が連立政権から離脱した。`, 'warn', 'politics');
+      });
+    case 'FOUND_PARTY':
+      return mutate(state, (s) => foundParty(s, action.party, !!action.lead, aggregateEffects(s)));
+    case 'RENAME':
+      return mutate(state, (s) => {
+        const name = String(action.name ?? '').trim().slice(0, 20);
+        if (!name) return;
+        if (action.kind === 'party') renameParty(s, action.id, { name, short: action.short, color: action.color });
+        else if (action.kind === 'country') {
+          if (name !== s.meta.countryName) addLog(s, `国名を「${s.meta.countryName}」から「${name}」に改めた。`, 'info', 'general');
+          s.meta.countryName = name;
+        } else if (action.kind === 'nation' && s.world.nations[action.id]) {
+          const n = s.world.nations[action.id];
+          if (name !== n.name) addLog(s, `${n.name}が国名を「${name}」に改めた。`, 'info', 'diplomacy');
+          n.name = name;
+        }
       });
     case 'DIPLOMACY':
       return mutate(state, (s, rng) => performDiplomacy(s, action.action, action.targetId, rng));

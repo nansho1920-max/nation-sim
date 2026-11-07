@@ -1,5 +1,7 @@
 import { memo, useMemo, useState } from 'react';
-import { Briefcase, Check, Gavel, Landmark, Scale, Star, UserPlus, UserMinus, Vote } from 'lucide-react';
+import { Briefcase, Check, Flag, Gavel, Landmark, Pencil, Scale, Star, UserPlus, UserMinus, Vote } from 'lucide-react';
+import RenameDialog from '../modals/RenameDialog';
+import FoundPartyModal from '../modals/FoundPartyModal';
 import { Panel, Button, Chip, Bar, Sparkline, Tabs } from '../ui/kit';
 import { compat as compatOf, partyOf, seatOrder, stanceOf } from '../../game/engine/parties';
 import { ideologyLabel } from '../../game/data/parties';
@@ -51,7 +53,7 @@ const Stars = ({ n, label }) => (
   </span>
 );
 
-function ParliamentTab({ s, d, dispatch }) {
+function ParliamentTab({ s, d, dispatch, onFound, onRename }) {
   const pol = s.politics;
   const player = s.meta.partyId;
   const hist = s.history.slice(-36);
@@ -103,7 +105,17 @@ function ParliamentTab({ s, d, dispatch }) {
         )}
       </Panel>
 
-      <Panel title="政党と連立" icon={Vote} bodyClass="p-0">
+      <Panel
+        title="政党と連立"
+        icon={Vote}
+        bodyClass="p-0"
+        actions={
+          <Button size="sm" onClick={onFound}>
+            <Flag className="h-3.5 w-3.5" />
+            新党を結成
+          </Button>
+        }
+      >
         <ul className="divide-y divide-line">
           {[...s.parties]
             .sort((a, b) => pol.seats[b.id] - pol.seats[a.id])
@@ -118,6 +130,9 @@ function ParliamentTab({ s, d, dispatch }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="h-3 w-3 rounded-sm" style={{ background: p.color }} />
                       <span className="font-bold text-ink">{p.name}</span>
+                      <button onClick={() => onRename(p)} className="btn h-6 w-6 text-ink-faint hover:bg-raised hover:text-ink" aria-label={`${p.name}の名前を変更`} title="名前を変更">
+                        <Pencil className="h-3 w-3" />
+                      </button>
                       {isPlayer && <Chip tone="brass">与党第一党</Chip>}
                       {inCoalition && !isPlayer && <Chip tone="good">連立</Chip>}
                     </div>
@@ -303,6 +318,8 @@ const TABS = [
 
 export default function Politics({ state, derived, dispatch }) {
   const [tab, setTab] = useState('parliament');
+  const [founding, setFounding] = useState(false);
+  const [renaming, setRenaming] = useState(null);
   const enacted = useMemo(() => Object.keys(state.politics.laws).length, [state.politics.laws]);
   return (
     <div className="space-y-4">
@@ -314,7 +331,31 @@ export default function Politics({ state, derived, dispatch }) {
         </div>
       </div>
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
-      {tab === 'parliament' && <ParliamentTab s={state} d={derived} dispatch={dispatch} />}
+      {tab === 'parliament' && <ParliamentTab s={state} d={derived} dispatch={dispatch} onFound={() => setFounding(true)} onRename={setRenaming} />}
+      {founding && (
+        <FoundPartyModal
+          state={state}
+          onCancel={() => setFounding(false)}
+          onFound={(party, lead) => {
+            dispatch({ type: 'FOUND_PARTY', party, lead });
+            setFounding(false);
+          }}
+        />
+      )}
+      {renaming && (
+        <RenameDialog
+          title={`${renaming.name}の名前を変更`}
+          name={renaming.name}
+          short={renaming.short}
+          color={renaming.color}
+          maxLength={14}
+          onCancel={() => setRenaming(null)}
+          onSave={({ name, short, color }) => {
+            dispatch({ type: 'RENAME', kind: 'party', id: renaming.id, name, short, color });
+            setRenaming(null);
+          }}
+        />
+      )}
       {tab === 'laws' && <LawsTab s={state} dispatch={dispatch} />}
       {tab === 'cabinet' && <CabinetTab s={state} dispatch={dispatch} />}
     </div>

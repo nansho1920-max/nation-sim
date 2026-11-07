@@ -115,7 +115,9 @@ export function Collapsible({ title, children, defaultOpen = false }) {
   );
 }
 
-export function Sparkline({ data, color = '#d4a24c', height = 28, min, max }) {
+export function Sparkline({ data: raw, color = '#d4a24c', height = 28, min, max }) {
+  // 途中で生まれた政党など、過去の値がない場合は0として描く
+  const data = raw?.map((v) => (Number.isFinite(v) ? v : 0));
   if (!data || data.length < 2) return <div style={{ height }} />;
   const lo = min ?? Math.min(...data);
   const hi = max ?? Math.max(...data);
