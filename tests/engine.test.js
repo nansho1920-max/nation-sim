@@ -302,3 +302,64 @@ describe('ゲーム途中の新党結成と改名', () => {
     expect(R(s, { type: 'RENAME', kind: 'country', name: '   ' }).meta.countryName).toBe('大和帝国');
   });
 });
+
+describe('ゲーム途中の政策変更', () => {
+  it('自党の政策を変えると政治資本を使い、支持が一時的に下がり、法案への賛否が変わる', () => {
+    const s = structuredClone(newGame());
+    s.politics.capital = 100;
+    const target = { econ: -0.8, social: 0.7, eco: -0.2, nation: 0.4, reform: -0.3 };
+    const cost = R(s, { type: 'CHANGE_POLICY', id: 'conservative', axes: target });
+    const p = cost.parties.find((x) => x.id === 'conservative');
+    expect(p.axes.econ).toBe(-0.8);
+    expect(cost.politics.capital).toBeLessThan(100);
+    expect(cost.politics.support.conservative).toBeLessThan(s.politics.support.conservative);
+    const law = LAWS.find((l) => l.id === 'minimum_wage');
+    const before = predictVote(s, law).rows.find((r) => r.party === 'conservative').stance;
+    const after = predictVote(cost, law).rows.find((r) => r.party === 'conservative').stance;
+    expect(after).toBeGreaterThan(before);
+  });
+  it('政策が大きく離れた連立相手は政権を離脱する', () => {
+    const s = structuredClone(newGame());
+    s.politics.capital = 100;
+    const partner = s.politics.coalition.find((p) => p !== 'conservative');
+    expect(partner).toBeTruthy();
+    const pa = s.parties.find((p) => p.id === partner).axes;
+    const opposite = Object.fromEntries(Object.entries(pa).map(([k, v]) => [k, v >= 0 ? -1 : 1]));
+    const out = R(s, { type: 'CHANGE_POLICY', id: 'conservative', axes: opposite });
+    expect(out.politics.coalition).not.toContain(partner);
+    expect(out.politics.coalition).toContain('conservative');
+  });
+  it('他党の路線も変えられ、政治資本が足りなければ変えられない', () => {
+    const s = structuredClone(newGame());
+    s.politics.capital = 100;
+    const out = R(s, { type: 'CHANGE_POLICY', id: 'green', axes: { econ: 0.5, social: 0, eco: 0.5, nation: 0, reform: 0 } });
+    expect(out.parties.find((x) => x.id === 'green').axes.econ).toBe(0.5);
+    s.politics.capital = 3;
+    expect(R(s, { type: 'CHANGE_POLICY', id: 'green', axes: { econ: 0.5, social: 0, eco: 0.5, nation: 0, reform: 0 } }).parties.find((x) => x.id === 'green').axes.econ).toBe(-0.3);
+  });
+  it('政策変更後も10年遊べる', () => {
+    const s = structuredClone(newGame());
+    s.politics.capital = 100;
+    const out = play(R(s, { type: 'CHANGE_POLICY', id: 'conservative', axes: { econ: 0, social: 0, eco: 0.5, nation: 0, reform: 0.5 } }), 4000, 1);
+    expect(findNonFinite(out)).toBeNull();
+  });
+});
+
+describe('新しいゲームの設定', () => {
+  it('ランダム世界の周辺国の名前を、開始前に変えられる', () => {
+    const s = newGame({ scenarioId: 'random', scenarioSeed: 7, countryName: '自由な国', nationNames: { n1: '隣の大国', n3: '  ' } });
+    expect(s.meta.countryName).toBe('自由な国');
+    expect(s.world.nations.n1.name).toBe('隣の大国');
+    expect(s.world.nations.n3.name).toBe(generateRandomSetup(7).nations[2].name);
+  });
+  it('1から作った政党だけで始められる', () => {
+    const parties = [
+      { id: 'custom1', name: 'A党', axes: { econ: 0.5 } },
+      { id: 'custom2', name: 'B党', axes: { econ: -0.5 } },
+      { id: 'custom3', name: 'C党', axes: { eco: 0.8 } },
+    ];
+    const s = play(newGame({ parties, partyId: 'custom2' }), 1500);
+    expect(s.parties.map((p) => p.name)).toEqual(['A党', 'B党', 'C党']);
+    expect(findNonFinite(s)).toBeNull();
+  });
+});

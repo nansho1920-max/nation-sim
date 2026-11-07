@@ -59,7 +59,7 @@ function buildWorldSetup(scenarioId, scenarioSeed, rng) {
   };
 }
 
-export function createNewGame({ scenarioId = 'standard', scenarioSeed, difficulty = 'normal', partyId, parties, countryName, seed = 1 }) {
+export function createNewGame({ scenarioId = 'standard', scenarioSeed, difficulty = 'normal', partyId, parties, countryName, nationNames = {}, seed = 1 }) {
   const diff = DIFFICULTIES[difficulty] ?? DIFFICULTIES.normal;
   const rng = makeRng(seed);
   const { sc, nationDefs, worldSeed, rivalry, alliances, orgs: orgMembers, startDiplo } = buildWorldSetup(scenarioId, scenarioSeed, rng);
@@ -75,7 +75,7 @@ export function createNewGame({ scenarioId = 'standard', scenarioSeed, difficult
   for (const def of nationDefs) {
     nations[def.id] = {
       id: def.id,
-      name: def.name,
+      name: nationNames[def.id]?.trim().slice(0, 20) || def.name,
       color: def.color,
       gov: def.gov,
       econSystem: def.econSystem,

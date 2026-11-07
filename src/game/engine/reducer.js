@@ -12,7 +12,7 @@ import { addLog, addModifier, applyEffects, ensureLiquidity } from './effects';
 import { aggregateEffects, approval, debtRatio } from './derived';
 import { runEconomy, runEnergy, runFiscal } from './economy';
 import { runPops, runSociety } from './society';
-import { canInvite, foundParty, proposeLaw, renameParty, runPolitics } from './politics';
+import { canInvite, changePolicy, foundParty, proposeLaw, renameParty, runPolitics } from './politics';
 import { checkOrgMembership, joinOrg, leaveOrg, performDiplomacy, proposePeace, runDiplomacy } from './diplomacy';
 import { dueScheduled, fireEvent, fireScheduled, monthlyTriggers, pickDailyEvent, resolveEvent } from './events';
 import { runTech, techAvailable } from './tech';
@@ -233,6 +233,8 @@ export function gameReducer(state, action) {
         for (const [k, m] of Object.entries(s.politics.ministers)) if (m.party === action.partyId) delete s.politics.ministers[k];
         addLog(s, `${partyOf(s, action.partyId).name}が連立政権から離脱した。`, 'warn', 'politics');
       });
+    case 'CHANGE_POLICY':
+      return mutate(state, (s) => changePolicy(s, action.id, action.axes));
     case 'FOUND_PARTY':
       return mutate(state, (s) => foundParty(s, action.party, !!action.lead, aggregateEffects(s)));
     case 'RENAME':

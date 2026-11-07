@@ -1,5 +1,5 @@
-import { memo, useMemo, useState } from 'react';
-import { Crown, Dices, Pencil, Play, Plus, RotateCcw, Shuffle, Star, Trash2, Wand2 } from 'lucide-react';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { Check, Crown, Dices, Eraser, Pencil, Play, Plus, RotateCcw, Shuffle, Star, Trash2, Wand2 } from 'lucide-react';
 import { SCENARIOS } from '../../game/data/scenarios';
 import { DIFFICULTIES } from '../../game/data/balance';
 import { DEFAULT_PARTIES, MAX_PARTIES, MIN_PARTIES, PARTY_COLORS, ideologyLabel } from '../../game/data/parties';
@@ -36,7 +36,50 @@ const MiniMap = memo(function MiniMap({ setup }) {
   );
 });
 
-function RandomPreview({ setup, onReroll }) {
+/** クリックするとその場で書き換えられる名前 */
+function InlineName({ value, onChange, label, maxLength = 20, className = '' }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (draft.trim()) onChange(draft.trim());
+    else setDraft(value);
+    setEditing(false);
+  };
+  if (editing) {
+    return (
+      <form
+        className="flex items-center gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          commit();
+        }}
+      >
+        <input
+          autoFocus
+          value={draft}
+          maxLength={maxLength}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Escape' && (setDraft(value), setEditing(false))}
+          aria-label={label}
+          className={`min-w-0 flex-1 rounded border border-brass bg-night px-2 py-0.5 text-ink focus:outline-none ${className}`}
+        />
+        <button type="submit" className="btn h-7 w-7 text-emerald-300 hover:bg-raised" aria-label="決定">
+          <Check className="h-4 w-4" />
+        </button>
+      </form>
+    );
+  }
+  return (
+    <button onClick={() => setEditing(true)} className={`group inline-flex max-w-full items-center gap-1.5 text-left ${className}`} title={label} aria-label={label}>
+      <span className="truncate">{value}</span>
+      <Pencil className="h-3 w-3 shrink-0 text-ink-faint group-hover:text-brass" />
+    </button>
+  );
+}
+
+function RandomPreview({ setup, onReroll, countryName, onRenameCountry, nationNames, onRenameNation }) {
   const sc = setup.scenario;
   return (
     <div className="mt-3 grid gap-4 rounded-xl border border-brass/50 bg-panel p-4 lg:grid-cols-[1fr_1.1fr]">
@@ -44,7 +87,7 @@ function RandomPreview({ setup, onReroll }) {
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="label">生成された国家</div>
-            <div className="font-serif text-xl font-bold text-brass-light">{sc.countryName}</div>
+            <InlineName value={countryName || sc.countryName} onChange={onRenameCountry} label="自国の国名を変更" className="font-serif text-xl font-bold text-brass-light" />
           </div>
           <Button size="sm" onClick={onReroll}>
             <Dices className="h-4 w-4" />
@@ -76,7 +119,7 @@ function RandomPreview({ setup, onReroll }) {
             {setup.nations.map((n) => (
               <li key={n.id} className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: n.color }} />
-                <span className="text-ink">{n.name}</span>
+                <InlineName value={nationNames[n.id] ?? n.name} onChange={(v) => onRenameNation(n.id, v)} label={`${n.name}の国名を変更`} className="min-w-0 text-ink" />
                 <span className="truncate text-ink-faint">{n.gov}</span>
               </li>
             ))}
@@ -101,6 +144,9 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
   const [partyId, setParty] = useState('conservative');
   const [editing, setEditing] = useState(null); // 編集中の政党（新規は id が未登録）
   const [countryName, setCountryName] = useState('');
+  const [nationNames, setNationNames] = useState({});
+  // 世界を作り直したら、周辺国の名前の変更は取り消す（国が入れ替わるため）
+  useEffect(() => setNationNames({}), [scenarioSeed]);
 
   const randomSetup = useMemo(() => (scenarioId === 'random' ? generateRandomSetup(scenarioSeed) : null), [scenarioId, scenarioSeed]);
   const sc = randomSetup ? randomSetup.scenario : SCENARIOS.find((s) => s.id === scenarioId);
@@ -122,7 +168,7 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
   const removeParty = (id) => {
     const next = parties.filter((p) => p.id !== id);
     setParties(next);
-    if (partyId === id) setParty(next[0].id);
+    if (partyId === id) setParty(next[0]?.id ?? null);
   };
 
   const randomizeParties = () => {
@@ -140,6 +186,7 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
       partyId,
       parties,
       countryName: countryName.trim() || sc.countryName,
+      nationNames: scenarioId === 'random' ? nationNames : {},
       ...opts,
     });
 
@@ -202,7 +249,16 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
               </button>
             ))}
           </div>
-          {randomSetup && <RandomPreview setup={randomSetup} onReroll={() => setScenarioSeed(randomSeed())} />}
+          {randomSetup && (
+            <RandomPreview
+              setup={randomSetup}
+              onReroll={() => setScenarioSeed(randomSeed())}
+              countryName={countryName.trim()}
+              onRenameCountry={setCountryName}
+              nationNames={nationNames}
+              onRenameNation={(id, name) => setNationNames((m) => ({ ...m, [id]: name }))}
+            />
+          )}
         </section>
 
         <section className="mt-8">
@@ -210,7 +266,7 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
             <div>
               <h2 className="label">2. 政党の顔ぶれと、あなたの政党</h2>
               <p className="text-[11px] text-ink-faint">
-                政党は{MIN_PARTIES}〜{MAX_PARTIES}つ。自由に作り、編集し、削除できる。選んだ党があなたの与党になる。
+                政党は{MIN_PARTIES}〜{MAX_PARTIES}つ。今の顔ぶれを編集しても、「白紙から作る」で1からすべて自分で決めてもよい。選んだ党があなたの与党になる。
               </p>
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -221,6 +277,17 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
               <Button size="sm" onClick={randomizeParties}>
                 <Dices className="h-3.5 w-3.5" />
                 ランダムな政党構成
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setParties([]);
+                  setParty(null);
+                  setEditing({ id: 'custom1', name: '新しい政党', short: '新党', color: PARTY_COLORS[0], axes: { econ: 0, social: 0, eco: 0, nation: 0, reform: 0 } });
+                }}
+              >
+                <Eraser className="h-3.5 w-3.5" />
+                白紙から作る
               </Button>
               <Button
                 size="sm"
@@ -238,6 +305,11 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
           </div>
           {editing && <PartyEditor key={editing.id} initial={editing} others={parties} onSave={saveParty} onCancel={() => setEditing(null)} />}
           <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {parties.length === 0 && !editing && (
+              <p className="rounded-lg border border-dashed border-line-strong p-4 text-[13px] text-ink-dim sm:col-span-2 lg:col-span-3">
+                まだ政党がありません。「政党を作る」で、党名・色・政策を決めて1つずつ作ってください（最低{MIN_PARTIES}党）。
+              </p>
+            )}
             {parties.map((p) => (
               <div key={p.id} className={`flex items-center gap-2 rounded-lg border p-3 transition ${partyId === p.id ? 'border-brass bg-brass/10' : 'border-line bg-panel'}`}>
                 <button onClick={() => setParty(p.id)} className="min-w-0 flex-1 text-left" aria-pressed={partyId === p.id}>
@@ -256,7 +328,7 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
                   <button onClick={() => setEditing(p)} disabled={!!editing} className="btn h-7 w-7 text-ink-dim hover:bg-raised hover:text-ink" aria-label={`${p.name}を編集`}>
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
-                  <button onClick={() => removeParty(p.id)} disabled={parties.length <= MIN_PARTIES} className="btn h-7 w-7 text-ink-dim hover:bg-raised hover:text-red-300" aria-label={`${p.name}を削除`}>
+                  <button onClick={() => removeParty(p.id)} className="btn h-7 w-7 text-ink-dim hover:bg-raised hover:text-red-300" aria-label={`${p.name}を削除`}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -298,11 +370,12 @@ export default function NewGameScreen({ onStart, legacy, onCancel }) {
         </section>
 
         <div className="mt-8 flex flex-col items-center gap-2">
-          <Button variant="primary" size="lg" className="px-10" disabled={!!editing} onClick={() => start()}>
+          <Button variant="primary" size="lg" className="px-10" disabled={!!editing || parties.length < MIN_PARTIES || !partyId} onClick={() => start()}>
             <Play className="h-5 w-5" />
             政権を発足させる
           </Button>
           {editing && <p className="text-[11px] text-amber-300">編集中の政党を保存するか、キャンセルしてください。</p>}
+          {!editing && parties.length < MIN_PARTIES && <p className="text-[11px] text-amber-300">政党はあと{MIN_PARTIES - parties.length}つ必要です（最低{MIN_PARTIES}党）。「政党を作る」で追加してください。</p>}
           {onCancel && (
             <button onClick={onCancel} className="text-sm text-ink-dim hover:text-ink">
               現在のゲームに戻る

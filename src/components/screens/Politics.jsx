@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react';
-import { Briefcase, Check, Flag, Gavel, Landmark, Pencil, Scale, Star, UserPlus, UserMinus, Vote } from 'lucide-react';
+import { Briefcase, Check, Flag, Gavel, Landmark, Pencil, Scale, SlidersHorizontal, Star, UserPlus, UserMinus, Vote } from 'lucide-react';
+import PolicyDialog from '../modals/PolicyDialog';
 import RenameDialog from '../modals/RenameDialog';
 import FoundPartyModal from '../modals/FoundPartyModal';
 import { Panel, Button, Chip, Bar, Sparkline, Tabs } from '../ui/kit';
@@ -53,7 +54,7 @@ const Stars = ({ n, label }) => (
   </span>
 );
 
-function ParliamentTab({ s, d, dispatch, onFound, onRename }) {
+function ParliamentTab({ s, d, dispatch, onFound, onRename, onPolicy }) {
   const pol = s.politics;
   const player = s.meta.partyId;
   const hist = s.history.slice(-36);
@@ -132,6 +133,15 @@ function ParliamentTab({ s, d, dispatch, onFound, onRename }) {
                       <span className="font-bold text-ink">{p.name}</span>
                       <button onClick={() => onRename(p)} className="btn h-6 w-6 text-ink-faint hover:bg-raised hover:text-ink" aria-label={`${p.name}の名前を変更`} title="名前を変更">
                         <Pencil className="h-3 w-3" />
+                      </button>
+                      <button
+                        onClick={() => onPolicy(p)}
+                        className="btn h-6 gap-1 rounded px-1.5 text-[10px] text-ink-faint hover:bg-raised hover:text-ink"
+                        aria-label={`${p.name}の政策を変更`}
+                        title={isPlayer ? '政策転換' : '路線変更（政界工作）'}
+                      >
+                        <SlidersHorizontal className="h-3 w-3" />
+                        政策
                       </button>
                       {isPlayer && <Chip tone="brass">与党第一党</Chip>}
                       {inCoalition && !isPlayer && <Chip tone="good">連立</Chip>}
@@ -320,6 +330,7 @@ export default function Politics({ state, derived, dispatch }) {
   const [tab, setTab] = useState('parliament');
   const [founding, setFounding] = useState(false);
   const [renaming, setRenaming] = useState(null);
+  const [policy, setPolicy] = useState(null);
   const enacted = useMemo(() => Object.keys(state.politics.laws).length, [state.politics.laws]);
   return (
     <div className="space-y-4">
@@ -331,7 +342,18 @@ export default function Politics({ state, derived, dispatch }) {
         </div>
       </div>
       <Tabs tabs={TABS} value={tab} onChange={setTab} />
-      {tab === 'parliament' && <ParliamentTab s={state} d={derived} dispatch={dispatch} onFound={() => setFounding(true)} onRename={setRenaming} />}
+      {tab === 'parliament' && <ParliamentTab s={state} d={derived} dispatch={dispatch} onFound={() => setFounding(true)} onRename={setRenaming} onPolicy={setPolicy} />}
+      {policy && (
+        <PolicyDialog
+          state={state}
+          party={state.parties.find((p) => p.id === policy.id)}
+          onCancel={() => setPolicy(null)}
+          onApply={(axes) => {
+            dispatch({ type: 'CHANGE_POLICY', id: policy.id, axes });
+            setPolicy(null);
+          }}
+        />
+      )}
       {founding && (
         <FoundPartyModal
           state={state}

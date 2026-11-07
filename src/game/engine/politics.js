@@ -1,7 +1,7 @@
 // 政治：政党支持率・選挙・連立・法律・内閣
 import { approach, clamp, sum } from '../core/math';
 import { CAPITAL_MAX, ELECTION_INTERVAL, MAJORITY, PARLIAMENT_SEATS, SUPERMAJORITY } from '../data/balance';
-import { COALITION_MIN_COMPAT, MAX_PARTIES, ideologyLabel, makeParty, partyCompatibility } from '../data/parties';
+import { COALITION_MIN_COMPAT, MAX_PARTIES, axisDistance, ideologyLabel, makeParty, partyCompatibility } from '../data/parties';
 import { POPS, POP_TURNOUT } from '../data/pops';
 import { compat, partyIds, partyOf, popPref, stanceOf } from './parties';
 import { LAWS, getLaw } from '../data/laws';
@@ -422,4 +422,56 @@ export function renameParty(s, id, { name, short, color }) {
   const old = p.name;
   s.parties = s.parties.map((x) => (x.id === id ? makeParty({ ...x, name: name.trim(), short: short?.trim() || name.trim().slice(0, 2), color: color ?? x.color }) : x));
   if (old !== name.trim()) addLog(s, `${old}が党名を「${name.trim()}」に改めた。`, 'politics', 'politics');
+}
+
+// ---------- 政策の変更 ----------
+
+/** 政策を変える費用（政治資本）。動かす距離が大きいほど高い */
+export function policyChangeCost(s, id, axes) {
+  const p = partyOf(s, id);
+  if (!p) return 0;
+  const dist = axisDistance(p.axes, axes);
+  return dist < 0.05 ? 0 : Math.round(5 + dist * 25);
+}
+
+/** 政策を変えた場合に連立から離脱する政党 */
+export function partnersLeaving(s, id, axes) {
+  const player = s.meta.partyId;
+  const moved = makeParty({ ...partyOf(s, id), axes });
+  const lineup = s.parties.map((p) => (p.id === id ? moved : p));
+  const byId = Object.fromEntries(lineup.map((p) => [p.id, p]));
+  if (!s.politics.coalition.includes(id) && id !== player) return [];
+  return s.politics.coalition.filter((p) => p !== player && partyCompatibility(byId[player], byId[p]) < 0.25);
+}
+
+export function changePolicy(s, id, axes) {
+  const party = partyOf(s, id);
+  if (!party) return false;
+  const cost = policyChangeCost(s, id, axes);
+  if (cost === 0 || s.politics.capital < cost) return false;
+  const dist = axisDistance(party.axes, axes);
+  const leaving = partnersLeaving(s, id, axes);
+  const isPlayer = id === s.meta.partyId;
+  const before = ideologyLabel(party.axes);
+
+  s.politics.capital -= cost;
+  s.parties = s.parties.map((p) => (p.id === id ? makeParty({ ...p, axes }) : p));
+  const after = ideologyLabel(partyOf(s, id).axes);
+  const shift = before === after ? `基本路線「${after}」のまま細部を修正` : `${before} → ${after}`;
+
+  if (isPlayer) {
+    // 「変節」への批判で一時的に支持を失う
+    applyEffects(s, { partySupport: { [id]: -Math.min(6, dist * 5) } });
+    addLog(s, `与党${party.name}が政策を転換した（${shift}）。「変節だ」との批判も上がっている。`, 'politics', 'politics');
+    addNews(s, '政治', `${party.name}が路線転換。「${after}」を掲げる`);
+  } else {
+    addLog(s, `政界工作により、${party.name}が路線を変更した（${shift}）。`, 'politics', 'politics');
+    addNews(s, '政治', `${party.name}が党の方針を見直し、「${after}」路線へ`);
+  }
+  for (const p of leaving) {
+    s.politics.coalition = s.politics.coalition.filter((x) => x !== p);
+    for (const [k, m] of Object.entries(s.politics.ministers)) if (m.party === p) delete s.politics.ministers[k];
+    addLog(s, `政策の隔たりが大きくなり、${partyOf(s, p).name}が連立政権を離脱した。`, 'warn', 'politics');
+  }
+  return true;
 }
