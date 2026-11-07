@@ -1,55 +1,37 @@
-import { useCallback, useEffect, useMemo, useReducer } from 'react';
-import { SAVE_KEY, SAVE_VERSION } from '../game/constants';
-import { createInitialState, gameReducer } from '../game/engine';
-import { newSeed } from '../game/utils';
+import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { gameReducer } from '../game/engine/reducer';
+import { loadGame, saveGame } from '../game/save';
+import { randomSeed } from '../game/core/rng';
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return createInitialState();
-    const data = JSON.parse(raw);
-    if (data?.version !== SAVE_VERSION || !Array.isArray(data.countries)) return createInitialState();
-    return data;
-  } catch {
-    return createInitialState();
-  }
-}
-
-/** ゲーム状態 + LocalStorage 自動セーブ + アクションをまとめたカスタムフック */
+/** ゲーム状態とセーブ。月が変わった時・一時停止時・ページを閉じる時に自動保存する */
 export function useGame() {
-  const [state, dispatch] = useReducer(gameReducer, undefined, loadState);
+  const [state, dispatch] = useReducer(gameReducer, undefined, loadGame);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
-  // 状態が変わるたびに自動セーブ
+  const month = state?.month;
+  const pending = !!state?.events?.pending;
+  const over = !!state?.gameOver;
+  const actionsKey = state?.logSeq;
   useEffect(() => {
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(state));
-    } catch {
-      /* ストレージが使えない環境では保存をスキップ */
-    }
-  }, [state]);
+    if (stateRef.current) saveGame(stateRef.current);
+  }, [month, pending, over, actionsKey]);
 
-  const actions = useMemo(
-    () => ({
-      endTurn: () => dispatch({ type: 'END_TURN', seed: newSeed() }),
-      resolveEvent: (optionIndex) => dispatch({ type: 'RESOLVE_EVENT', optionIndex }),
-      domesticAction: (actionId) => dispatch({ type: 'DOMESTIC_ACTION', actionId }),
-      changeIdeology: (ideology) => dispatch({ type: 'CHANGE_IDEOLOGY', ideology }),
-      toggleIsolation: () => dispatch({ type: 'TOGGLE_ISOLATION' }),
-      sendAid: (countryId) => dispatch({ type: 'SEND_AID', countryId, seed: newSeed() }),
-      declareWar: (countryId) => dispatch({ type: 'DECLARE_WAR', countryId }),
-      suePeace: (countryId) => dispatch({ type: 'SUE_PEACE', countryId }),
-    }),
-    [],
-  );
-
-  const reset = useCallback(() => {
-    try {
-      localStorage.removeItem(SAVE_KEY);
-    } catch {
-      /* noop */
-    }
-    dispatch({ type: 'RESET' });
+  useEffect(() => {
+    const save = () => stateRef.current && saveGame(stateRef.current);
+    window.addEventListener('beforeunload', save);
+    document.addEventListener('visibilitychange', save);
+    return () => {
+      window.removeEventListener('beforeunload', save);
+      document.removeEventListener('visibilitychange', save);
+    };
   }, []);
 
-  return { state, actions: { ...actions, reset } };
+  const newGame = useCallback((options) => dispatch({ type: 'NEW_GAME', options: { ...options, seed: randomSeed() } }), []);
+  const quit = useCallback(() => {
+    saveGame(null);
+    dispatch({ type: 'CLEAR' });
+  }, []);
+
+  return { state, dispatch, newGame, quit };
 }

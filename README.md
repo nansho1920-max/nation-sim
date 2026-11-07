@@ -1,6 +1,6 @@
-# 国家統治シミュレーター
+# 国家統治シミュレーター II
 
-React + Tailwind CSS + Lucide React で作ったターン制の政治・国家運営シミュレーション。
+React + Tailwind CSS で作った、ブラウザで遊べるリアルタイム（一時停止可能）の国家運営シミュレーション。
 
 ## 遊ぶ
 
@@ -13,25 +13,51 @@ npm install
 npm run dev
 ```
 
-## 遊び方
-- 1ターン = 1ヶ月。右下の「ターンを進める」で進行。2026年4月から120ヶ月（10年）の任期満了で勝利。
-- 毎月2回まで政策・外交アクションを実行可能（鎖国のON/OFFは回数を消費しない）。
-- 敗北条件: 支持率0%（クーデター） / 国庫マイナスが3ヶ月連続（財政破綻）。
-- 進行状況は LocalStorage に自動保存されます。
+テスト：
+
+```bash
+npm test
+```
+
+## ゲームの特徴
+
+- **時間の流れ**：1日単位で時間が進む（一時停止／1x／3x／5x、Spaceキーで一時停止）。イベント発生時は自動で一時停止。
+- **経済・財政**：GDP・成長率・インフレ・失業率（オークンの法則）、所得税／法人税／消費税、7分野の予算配分、国債と利回り、中央銀行（自動のテイラー・ルール／手動）、紙幣増刷、電力需給と発電所建設。
+- **国民**：6つの人口集団（労働者・資本家・農民・公務員・若者・高齢者）ごとの満足度と、その内訳。
+- **政治**：6つの架空政党、ドント式による300議席の総選挙（4年ごと）、連立交渉、17の法律（採決結果を事前に予測）、憲法改正、内閣と大臣の任命、選挙公約。
+- **世界**：手続き生成された大陸（約260州）と8か国。8つの地図モード、自律的に行動するAI国家（AI同士の戦争・領土の変化・貿易協定の提案・制裁）、同盟、3つの国際機関、戦争と講和・領土割譲。
+- **技術ツリー**：4分野19技術。研究が進むと時代が進む。
+- **イベント**：約40種類。MTTH（平均発生期間）方式で、国家の状態に応じて発生確率が変わる。連鎖イベント（感染症→経済対策→ワクチン開発、バブル→崩壊、汚職の隠蔽→発覚）や、閾値を超えると必ず起きるイベントもある。
+- **ゲーム性**：5つのシナリオ、4段階の難易度、政党ごとの難しさ、任期終了時の7分野の採点と称号。
 
 ## 構成
+
 ```
 src/
-  App.jsx                 レイアウトとタブ
-  hooks/useGame.js        useReducer + LocalStorage 自動セーブ
-  game/constants.js       バランス値・隣国・体制定義
-  game/events.js          ランダムイベント定義（宣言的エフェクト）
-  game/engine.js          ターン処理・戦争・外交の reducer（シード付き乱数で純粋関数）
-  game/utils.js           乱数・日付・書式ヘルパー
-  components/             Header / LogPanel / DomesticPanel / DiplomacyPanel /
-                          StatusPanel / EventModal / GameOverScreen / EndTurnButton / ConfirmDialog
+├── App.jsx
+├── hooks/            useGame（状態と自動セーブ）, useGameClock（時間進行）, useCountUp
+├── components/
+│   ├── layout/       TopBar, NewsTicker, SideNav
+│   ├── screens/      Overview, Economy, Society, Politics, World, Tech, Stats, History
+│   ├── world/        WorldMap（SVGの地図）
+│   ├── modals/       EventModal, GameOverModal, NewGameScreen, HelpModal, ConfirmDialog
+│   └── ui/           共通部品・色・アイコン
+└── game/
+    ├── core/         シード付き乱数、暦、数値・書式ヘルパー
+    ├── data/         シナリオ・政党・人口集団・法律・技術・内閣・国家・国際機関・イベント・バランス値
+    ├── world/        大陸の手続き生成（ボロノイ分割）
+    ├── engine/       reducer（日次・月次処理）、経済、社会、政治、外交、イベント、技術、採点、ニュース
+    └── save.js       セーブの保存・読み込み・バージョン移行
+tests/                エンジンの自動テスト（Vitest）
 ```
 
+設計方針：
+
+- ゲームロジック（`src/game`）はUIから完全に独立した純粋関数。
+- 乱数状態はセーブデータに保存され、同じ状態と同じ操作からは常に同じ結果になる（再現性）。
+- ニュースの文章はゲームの数値から生成されるだけで、数値には影響しない。
+- セーブデータにはバージョン番号があり、`src/game/save.js` の `MIGRATIONS` に移行関数を追加することで古いデータを壊さずに更新できる。
+
 ## デプロイ
+
 `main` に push すると GitHub Actions（`.github/workflows/deploy.yml`）がビルドして GitHub Pages に公開します。
-初回のみ、リポジトリの Settings → Pages → Source を「GitHub Actions」にしてください。

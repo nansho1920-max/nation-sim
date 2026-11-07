@@ -3,31 +3,65 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
   html,
   body,
   #root {
-    @apply min-h-screen bg-slate-950 text-slate-200 antialiased;
+    @apply min-h-screen bg-night text-ink antialiased;
   }
   body {
     background-image:
-      radial-gradient(ellipse at top, rgba(120, 53, 15, 0.12), transparent 60%),
-      radial-gradient(ellipse at bottom right, rgba(30, 58, 138, 0.12), transparent 60%);
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(212, 162, 76, 0.08), transparent),
+      radial-gradient(ellipse 60% 50% at 100% 100%, rgba(47, 93, 138, 0.1), transparent);
     background-attachment: fixed;
+  }
+  :focus-visible {
+    outline: 2px solid #d4a24c;
+    outline-offset: 2px;
   }
 }
 
 @layer components {
   .panel {
-    @apply rounded-xl border border-slate-800 bg-slate-900/70 shadow-xl shadow-black/30 backdrop-blur;
+    @apply rounded-xl border border-line bg-panel/90 shadow-lg shadow-black/30;
   }
   .panel-title {
-    @apply flex items-center gap-2 font-serif text-sm font-bold tracking-widest text-amber-200/90;
+    @apply flex items-center gap-2 font-serif text-[15px] font-bold tracking-wider text-ink;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md transition-all disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .num {
+    @apply font-mono tabular-nums;
+  }
+  .grid > * {
+    min-width: 0;
+  }
+  .label {
+    @apply text-[11px] font-medium uppercase tracking-wider text-ink-faint;
   }
 }
 
-.scrollbar-thin::-webkit-scrollbar { width: 6px; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+input[type='range'] {
+  accent-color: #d4a24c;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: #2e3b55;
+  border-radius: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

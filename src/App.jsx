@@ -1,103 +1,119 @@
-import { useState } from 'react';
-import { Globe2, Landmark, Zap } from 'lucide-react';
-import Header from './components/Header';
-import LogPanel from './components/LogPanel';
-import DomesticPanel from './components/DomesticPanel';
-import DiplomacyPanel from './components/DiplomacyPanel';
-import StatusPanel from './components/StatusPanel';
-import EventModal from './components/EventModal';
-import GameOverScreen from './components/GameOverScreen';
-import EndTurnButton from './components/EndTurnButton';
-import ConfirmDialog from './components/ConfirmDialog';
+import { Suspense, lazy, useMemo, useState } from 'react';
+import { Award } from 'lucide-react';
 import { useGame } from './hooks/useGame';
-import { ACTIONS_PER_TURN } from './game/constants';
+import { useGameClock } from './hooks/useGameClock';
+import { deriveAll } from './game/engine/derived';
+import { clearLegacySaves, hasLegacySave } from './game/save';
+import TopBar, { MobileClock } from './components/layout/TopBar';
+import NewsTicker from './components/layout/NewsTicker';
+import SideNav from './components/layout/SideNav';
+import Overview from './components/screens/Overview';
+import Economy from './components/screens/Economy';
+import Society from './components/screens/Society';
+import Politics from './components/screens/Politics';
+import World from './components/screens/World';
+import Tech from './components/screens/Tech';
+import History from './components/screens/History';
+import EventModal from './components/modals/EventModal';
+import GameOverModal from './components/modals/GameOverModal';
+import NewGameScreen from './components/modals/NewGameScreen';
+import HelpModal from './components/modals/HelpModal';
+import ConfirmDialog from './components/modals/ConfirmDialog';
+import { Button } from './components/ui/kit';
 
-const TABS = [
-  { id: 'domestic', label: '内政', icon: Landmark },
-  { id: 'diplomacy', label: '外交', icon: Globe2 },
-];
+const Stats = lazy(() => import('./components/screens/Stats'));
+const SCREEN_COMPONENTS = { overview: Overview, economy: Economy, society: Society, politics: Politics, world: World, tech: Tech, stats: Stats, history: History };
+const HELP_KEY = 'nation-sim-help-seen';
 
 export default function App() {
-  const { state, actions } = useGame();
-  const [tab, setTab] = useState('domestic');
+  const { state, dispatch, newGame } = useGame();
+  const clock = useGameClock(state, dispatch);
+  const derived = useMemo(() => (state ? deriveAll(state) : null), [state]);
+  const [screen, setScreen] = useState('overview');
+  const [help, setHelp] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
-  const blocked = !!state.pendingEvent || !!state.gameOver;
-  const atWar = state.countries.some((c) => c.atWar);
+  const [setup, setSetup] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+
+  const start = (options) => {
+    clearLegacySaves();
+    clock.setSpeed(0);
+    newGame(options);
+    setSetup(false);
+    setReviewing(false);
+    setScreen('overview');
+    try {
+      if (!localStorage.getItem(HELP_KEY)) {
+        setHelp(true);
+        localStorage.setItem(HELP_KEY, '1');
+      }
+    } catch {
+      /* noop */
+    }
+  };
+
+  if (!state || setup) {
+    return <NewGameScreen legacy={!state && hasLegacySave()} onStart={start} onCancel={state ? () => setSetup(false) : null} />;
+  }
+
+  const Screen = SCREEN_COMPONENTS[screen];
+  const badges = {
+    politics: state.politics.nextElection - state.month <= 3,
+    world: derived.atWar,
+    tech: !state.tech.current,
+  };
 
   return (
-    <div className="min-h-screen pb-32">
-      <Header state={state} onReset={() => setConfirmReset(true)} />
-
-      <main className="mx-auto grid max-w-[1600px] gap-4 px-4 py-4 lg:grid-cols-[400px_minmax(0,1fr)_300px]">
-        {/* 操作パネル */}
-        <aside className="panel flex flex-col overflow-hidden lg:max-h-[calc(100vh-200px)]">
-          <div className="flex border-b border-slate-800">
-            {TABS.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
-                className={`relative flex flex-1 items-center justify-center gap-2 py-3 font-serif text-sm font-bold tracking-widest transition ${
-                  tab === id ? 'bg-slate-800/60 text-amber-200' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-                {id === 'diplomacy' && atWar && <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />}
-                {tab === id && <span className="absolute inset-x-6 bottom-0 h-0.5 bg-amber-400" />}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950/40 px-4 py-2 text-xs">
-            <span className="flex items-center gap-1.5 text-slate-400">
-              <Zap className="h-3.5 w-3.5 text-amber-400" />
-              今月の残り行動回数
-            </span>
-            <span className="flex gap-1">
-              {Array.from({ length: ACTIONS_PER_TURN }).map((_, i) => (
-                <span key={i} className={`h-2.5 w-6 rounded-sm ${i < state.actionsLeft ? 'bg-amber-400' : 'bg-slate-700'}`} />
-              ))}
-            </span>
-          </div>
-          <div className="scrollbar-thin flex-1 overflow-y-auto p-4">
-            {tab === 'domestic' ? (
-              <DomesticPanel state={state} actions={actions} disabled={blocked} />
-            ) : (
-              <DiplomacyPanel state={state} actions={actions} disabled={blocked} />
-            )}
-          </div>
-        </aside>
-
-        {/* 中央ログ */}
-        <LogPanel logs={state.logs} currentTurn={state.turn} />
-
-        {/* 右サイド: 状況 */}
-        <aside className="scrollbar-thin lg:max-h-[calc(100vh-200px)] lg:overflow-y-auto">
-          <StatusPanel state={state} />
-        </aside>
-      </main>
-
-      {!state.gameOver && (
-        <EndTurnButton turn={state.turn} actionsLeft={state.actionsLeft} disabled={!!state.pendingEvent} onClick={actions.endTurn} />
+    <div className="min-h-screen pb-24 lg:pb-10">
+      <TopBar state={state} derived={derived} clock={clock} onHelp={() => setHelp(true)} onReset={() => setConfirmReset(true)} />
+      <NewsTicker news={state.news} />
+      {state.gameOver && reviewing && (
+        <div className="flex flex-wrap items-center justify-center gap-3 border-b border-brass/40 bg-brass/10 px-4 py-2 text-sm">
+          <span>
+            ゲーム終了：<span className="font-bold">{state.gameOver.title}</span>
+          </span>
+          <Button size="sm" onClick={() => setReviewing(false)}>
+            <Award className="h-3.5 w-3.5" />
+            評価を見る
+          </Button>
+          <Button size="sm" variant="primary" onClick={() => setSetup(true)}>
+            新しいゲーム
+          </Button>
+        </div>
       )}
-
-      <EventModal pending={state.pendingEvent} countries={state.countries} onResolve={actions.resolveEvent} />
-
-      {state.gameOver && <GameOverScreen state={state} onRestart={actions.reset} />}
-
-      <ConfirmDialog
-        open={confirmReset}
-        title="最初からやり直しますか？"
-        confirmLabel="リセットする"
-        tone="danger"
-        onCancel={() => setConfirmReset(false)}
-        onConfirm={() => {
-          actions.reset();
-          setConfirmReset(false);
-          setTab('domestic');
-        }}
+      <div
+        className="mx-auto grid max-w-[1680px] gap-4 py-4 lg:grid-cols-[190px_minmax(0,1fr)]"
+        style={{ paddingLeft: 'max(16px, env(safe-area-inset-left, 0px))', paddingRight: 'max(16px, env(safe-area-inset-right, 0px))' }}
       >
-        <p className="text-sm text-slate-300">現在のセーブデータは削除され、2026年4月から新しい政権が始まります。</p>
-      </ConfirmDialog>
+        <aside className="min-w-0">
+          <SideNav value={screen} onChange={setScreen} badges={badges} />
+        </aside>
+        <main className="min-w-0">
+          <Suspense fallback={<p className="py-10 text-center text-ink-faint">読み込み中…</p>}>
+            <Screen state={state} derived={derived} dispatch={dispatch} go={setScreen} />
+          </Suspense>
+        </main>
+      </div>
+
+      <MobileClock state={state} clock={clock} />
+      {state.events.pending && !state.gameOver && <EventModal state={state} onResolve={(index) => dispatch({ type: 'RESOLVE_EVENT', index })} />}
+      {state.gameOver && !reviewing && <GameOverModal state={state} onNewGame={() => setSetup(true)} onReview={() => setReviewing(true)} />}
+      {help && <HelpModal onClose={() => setHelp(false)} />}
+      {confirmReset && (
+        <ConfirmDialog
+          title="新しいゲームを始めますか？"
+          confirmLabel="設定画面へ"
+          danger
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={() => {
+            setConfirmReset(false);
+            clock.setSpeed(0);
+            setSetup(true);
+          }}
+        >
+          現在のゲームは、新しいゲームを開始した時点で上書きされます。
+        </ConfirmDialog>
+      )}
     </div>
   );
 }
